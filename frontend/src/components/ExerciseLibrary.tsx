@@ -4,8 +4,9 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Progress } from './ui/progress';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { exerciseService } from '../services/exercise.service';
 
 interface Exercise {
   id: string;
@@ -21,7 +22,8 @@ interface Exercise {
   totalSessions: number;
 }
 
-const exercises: Exercise[] = [
+// Default exercises (initial template - now managed by exerciseService)
+const defaultExercises: Exercise[] = [
   {
     id: 'ex-001',
     name: 'Shoulder Rotation',
@@ -147,11 +149,107 @@ const getLevelColor = (level: string) => {
 
 export function ExerciseLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [exercises, setExercises] = useState<Exercise[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Load exercises from service (which handles localStorage)
+  // Reload when navigating back to this page
+  // IMPORTANT: Always reload when component mounts or path changes to get latest data
+  useEffect(() => {
+    const loadExercises = () => {
+      const loadedExercises = exerciseService.getExercises();
+      console.log('📚 ExerciseLibrary: Loading exercises', loadedExercises.map(ex => `${ex.name}: ${ex.completedSessions}/${ex.totalSessions}`));
+      
+      // Find the specific exercise to verify its state
+      const wallPushUp = loadedExercises.find(ex => ex.id === 'ex-005');
+      if (wallPushUp) {
+        console.log(`🔍 ExerciseLibrary: Wall Push-Up state: ${wallPushUp.completedSessions}/${wallPushUp.totalSessions} (from localStorage)`);
+      }
+      
+      setExercises(loadedExercises);
+    };
+    loadExercises();
+  }, [location.pathname]); // Reload when route changes (user navigates back)
+  
+  // Also reload when component becomes visible
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('👁️ ExerciseLibrary: Page visible - reloading exercises');
+        const loadedExercises = exerciseService.getExercises();
+        setExercises(loadedExercises);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // Listen for storage events to update when exercises are completed
+  useEffect(() => {
+    console.log('🔧 ExerciseLibrary: Setting up event listeners for exerciseProgressUpdated');
+    
+    const handleStorageChange = (e?: StorageEvent | Event) => {
+      const eventType = e?.type || 'manual';
+      console.log('🔄 ExerciseLibrary: Received progress update event', eventType);
+      
+      // Use a slightly longer delay to ensure localStorage is fully updated
+      setTimeout(() => {
+        const loadedExercises = exerciseService.getExercises();
+        const exercisesDetails = loadedExercises.map(ex => {
+          const remaining = ex.totalSessions - ex.completedSessions;
+          return `${ex.name}: ${ex.completedSessions}/${ex.totalSessions} sessions (${remaining} remaining)`;
+        });
+        console.log('📊 ExerciseLibrary: Loaded exercises after event:', exercisesDetails);
+        console.log('📊 ExerciseLibrary: Setting exercises state...');
+        setExercises(loadedExercises);
+        console.log('✅ ExerciseLibrary: Exercises state updated');
+        console.log('✅ ExerciseLibrary: Updated exercises count:', loadedExercises.length);
+        
+        // Log specific exercise if provided in event detail
+        if (e && 'detail' in e && e.detail && typeof e.detail === 'object' && 'exerciseId' in e.detail) {
+          const exerciseId = (e.detail as { exerciseId: string }).exerciseId;
+          const updatedExercise = loadedExercises.find(ex => ex.id === exerciseId);
+          if (updatedExercise) {
+            console.log(`🎯 ExerciseLibrary: Updated exercise ${exerciseId}: ${updatedExercise.completedSessions}/${updatedExercise.totalSessions} sessions`);
+          }
+        }
+      }, 150); // Slightly longer delay to ensure localStorage write is complete
+    };
+
+    // Listen for storage events (cross-tab)
+    window.addEventListener('storage', handleStorageChange);
+    console.log('✅ ExerciseLibrary: Added storage event listener');
+    
+    // Listen for custom events (same-tab)
+    window.addEventListener('exerciseProgressUpdated', handleStorageChange);
+    console.log('✅ ExerciseLibrary: Added exerciseProgressUpdated event listener');
+    
+    // Also listen for focus to reload when user comes back to the tab
+    const handleFocus = () => {
+      console.log('👁️ ExerciseLibrary: Page focused - reloading exercises');
+      const loadedExercises = exerciseService.getExercises();
+      setExercises(loadedExercises);
+    };
+    window.addEventListener('focus', handleFocus);
+    console.log('✅ ExerciseLibrary: Added focus event listener');
+
+    return () => {
+      console.log('🧹 ExerciseLibrary: Cleaning up event listeners');
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('exerciseProgressUpdated', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   const handleStartExercise = (exercise: Exercise) => {
-    // Store exercise in sessionStorage for LiveSession to pick up
+    // Store exercise ID in sessionStorage (we'll get fresh data in LiveSession)
+    // Store both the full exercise and just the ID for safety
     sessionStorage.setItem('selectedExercise', JSON.stringify(exercise));
+    sessionStorage.setItem('selectedExerciseId', exercise.id);
     navigate('/live-session');
   };
 

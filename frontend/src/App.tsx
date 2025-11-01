@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { StatsProvider } from './contexts/StatsContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import { LoginOnboarding } from './components/LoginOnboarding';
 import { Navigation } from './components/Navigation';
@@ -133,20 +134,22 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<LoginOnboarding />} />
-          <Route
-            path="/*"
-            element={
-              <ProtectedRoute>
-                <AppContent />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </Router>
+      <StatsProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<LoginOnboarding />} />
+            <Route
+              path="/*"
+              element={
+                <ProtectedRoute>
+                  <AppContent />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Router>
+      </StatsProvider>
     </AuthProvider>
   );
 }

@@ -3,42 +3,36 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { Trophy, Target, Flame, Award, Star, Zap, CheckCircle2 } from 'lucide-react';
+import { useStats } from '../contexts/StatsContext';
+import { useAuth } from '../contexts/AuthContext';
 
-const quests = [
+const questDefinitions = [
   { 
-    id: 1, 
+    id: 'complete_3_sessions_week', 
     title: 'Complete 3 sessions this week', 
-    progress: 2, 
     total: 3, 
     xp: 50, 
-    status: 'active',
     icon: Target 
   },
   { 
-    id: 2, 
+    id: 'perfect_form_x3', 
     title: 'Perfect Form x3', 
-    progress: 3, 
     total: 3, 
     xp: 10, 
-    status: 'completed',
     icon: Star 
   },
   { 
-    id: 3, 
+    id: 'maintain_7_day_streak', 
     title: 'Maintain 7-day streak', 
-    progress: 5, 
     total: 7, 
     xp: 100, 
-    status: 'active',
     icon: Flame 
   },
   { 
-    id: 4, 
+    id: 'complete_full_exercise_plan', 
     title: 'Complete full exercise plan', 
-    progress: 8, 
     total: 10, 
     xp: 75, 
-    status: 'active',
     icon: Zap 
   }
 ];
@@ -52,15 +46,57 @@ const badges = [
   { name: 'Recovery Hero', earned: false, color: 'from-gray-300 to-gray-400', icon: '🦸' }
 ];
 
-const leaderboard = [
-  { rank: 1, name: 'Sarah Chen', level: 8, xp: 1240, streak: 21, avatar: 'S' },
-  { rank: 2, name: 'Michael Rodriguez', level: 7, xp: 1180, streak: 18, avatar: 'M' },
-  { rank: 3, name: 'You (Rose Martinez)', level: 4, xp: 320, streak: 12, avatar: 'R', isUser: true },
-  { rank: 4, name: 'Emily Watson', level: 4, xp: 280, streak: 9, avatar: 'E' },
-  { rank: 5, name: 'David Kim', level: 3, xp: 210, streak: 7, avatar: 'D' }
-];
-
 export function QuestsGamification() {
+  const { stats, leaderboard, isLoading } = useStats();
+  const { user } = useAuth();
+
+  // Calculate level from XP (150 XP per level)
+  const totalXp = stats?.totalXp || 0;
+  const currentLevel = Math.floor(totalXp / 150) + 1;
+  const xpForCurrentLevel = totalXp % 150;
+  const xpForNextLevel = 150;
+  const levelProgress = (xpForCurrentLevel / xpForNextLevel) * 100;
+  const xpToNextLevel = xpForNextLevel - xpForCurrentLevel;
+  
+  // Get user's initial for avatar
+  const userInitial = user?.name?.charAt(0).toUpperCase() || 'U';
+
+  // Build quests from stats
+  const questProgress = stats?.questProgress || {};
+  const currentStreak = stats?.currentStreak || 0;
+  
+  const quests = questDefinitions.map((questDef) => {
+    let progress = 0;
+    if (questDef.id === 'maintain_7_day_streak') {
+      progress = Math.min(currentStreak, questDef.total);
+    } else {
+      progress = questProgress[questDef.id]?.progress || 0;
+    }
+    
+    const isCompleted = progress >= questDef.total;
+    
+    return {
+      ...questDef,
+      progress,
+      status: isCompleted ? 'completed' : 'active',
+    };
+  });
+
+  // Map leaderboard entries
+  const leaderboardEntries = leaderboard.map((entry, index) => ({
+    ...entry,
+    isUser: entry.userId === user?.id,
+    avatar: entry.name?.charAt(0).toUpperCase() || entry.avatar || '?',
+  }));
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <p className="text-gray-600">Loading stats...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl">
       {/* Header */}
@@ -77,7 +113,7 @@ export function QuestsGamification() {
           <div className="flex items-center gap-6">
             <div className="relative">
               <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-lg">
-                <span className="text-4xl text-[#2C2E6F]">R</span>
+                <span className="text-4xl text-[#2C2E6F]">{userInitial}</span>
               </div>
               <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-[#FF8A73] rounded-full flex items-center justify-center text-white shadow-lg">
                 <Trophy className="w-5 h-5" />
@@ -85,23 +121,23 @@ export function QuestsGamification() {
             </div>
             
             <div className="flex-1">
-              <h2 className="text-white mb-1">Level 4: Resilience Builder</h2>
-              <p className="text-white/80 mb-4">Rose Martinez</p>
+              <h2 className="text-white mb-1">Level {currentLevel}: Resilience Builder</h2>
+              <p className="text-white/80 mb-4">{user?.name || 'User'}</p>
               
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-white text-sm">
-                  <span>320 / 500 XP</span>
-                  <span>180 XP to Level 5</span>
+                  <span>{xpForCurrentLevel} / {xpForNextLevel} XP</span>
+                  <span>{xpToNextLevel} XP to Level {currentLevel + 1}</span>
                 </div>
                 <div className="h-3 bg-white/20 rounded-full overflow-hidden">
-                  <div className="h-full w-[64%] bg-white rounded-full shadow-lg" />
+                  <div className="h-full bg-white rounded-full shadow-lg" style={{ width: `${levelProgress}%` }} />
                 </div>
               </div>
             </div>
 
             <div className="text-right">
               <div className="text-white/80 mb-1">Total XP</div>
-              <div className="text-4xl text-white">320</div>
+              <div className="text-4xl text-white">{totalXp}</div>
             </div>
           </div>
         </CardContent>
@@ -223,7 +259,7 @@ export function QuestsGamification() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {leaderboard.map((user) => (
+            {leaderboardEntries.map((user) => (
               <div 
                 key={user.rank}
                 className={`flex items-center gap-4 p-4 rounded-xl transition-all ${

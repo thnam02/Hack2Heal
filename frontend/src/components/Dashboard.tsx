@@ -1,6 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { TrendingUp, Award, CheckCircle, Flame } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { useAuth } from '../contexts/AuthContext';
+import { useStats } from '../contexts/StatsContext';
+import { exerciseService } from '../services/exercise.service';
+import { useMemo } from 'react';
 import MoodTracker from './MoodTracker';
 import SmartPlanner from './SmartPlanner';
 
@@ -26,11 +30,53 @@ const painData = [
 ];
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const { stats, isLoading } = useStats();
+  const userName = user?.name || 'there';
+
+  // Calculate completion rate from exercise data
+  const exerciseStats = useMemo(() => {
+    const exercises = exerciseService.getExercises();
+    const completedSessions = exercises.reduce((sum, ex) => sum + ex.completedSessions, 0);
+    const totalSessions = exercises.reduce((sum, ex) => sum + ex.totalSessions, 0);
+    const completionRate = totalSessions > 0 ? Math.round((completedSessions / totalSessions) * 100) : 0;
+    
+    // Calculate exercise adherence (percentage of exercises completed)
+    const completedExercises = exercises.filter(ex => ex.progress === 100).length;
+    const adherenceRate = exercises.length > 0 ? Math.round((completedExercises / exercises.length) * 100) : 0;
+    
+    return {
+      completedSessions,
+      totalSessions,
+      completionRate,
+      adherenceRate,
+      completedExercises,
+      totalExercises: exercises.length,
+    };
+  }, []);
+
+  // Get real stats from backend
+  const currentStreak = stats?.currentStreak || 0;
+  const totalXp = stats?.totalXp || 0;
+  const currentLevel = Math.floor(totalXp / 150) + 1;
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8 min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#6F66FF] mx-auto mb-4"></div>
+          <p className="text-[#1B1E3D]/60">Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-3xl mb-2">Hi Rose 👋, ready to recover today?</h1>
+        <h1 className="text-3xl mb-2">Hi {userName} 👋, ready to recover today?</h1>
         <p className="text-[#1B1E3D]/60">Let's continue your shoulder rehabilitation journey.</p>
         <div 
           className="mt-4 text-white rounded-2xl p-4"
@@ -54,8 +100,10 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl text-[#6F66FF] mb-1">96%</div>
-            <p className="text-sm text-[#3ECF8E]">+8% this week</p>
+            <div className="text-3xl text-[#6F66FF] mb-1">{exerciseStats.adherenceRate}%</div>
+            <p className="text-sm text-[#3ECF8E]">
+              {exerciseStats.completedExercises} of {exerciseStats.totalExercises} exercises complete
+            </p>
           </CardContent>
         </Card>
 
@@ -67,8 +115,8 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl text-[#3ECF8E] mb-1">95%</div>
-            <p className="text-sm text-[#1B1E3D]/60">Excellent form!</p>
+            <div className="text-3xl text-[#3ECF8E] mb-1">Level {currentLevel}</div>
+            <p className="text-sm text-[#1B1E3D]/60">{totalXp} XP total</p>
           </CardContent>
         </Card>
 
@@ -80,8 +128,10 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl text-[#6F66FF] mb-1">94%</div>
-            <p className="text-sm text-[#1B1E3D]/60">28 of 30 sessions</p>
+            <div className="text-3xl text-[#6F66FF] mb-1">{exerciseStats.completionRate}%</div>
+            <p className="text-sm text-[#1B1E3D]/60">
+              {exerciseStats.completedSessions} of {exerciseStats.totalSessions} sessions
+            </p>
           </CardContent>
         </Card>
 
@@ -93,8 +143,10 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl text-[#F87171] mb-1">12 🔥</div>
-            <p className="text-sm text-[#1B1E3D]/60">Keep it going!</p>
+            <div className="text-3xl text-[#F87171] mb-1">{currentStreak} 🔥</div>
+            <p className="text-sm text-[#1B1E3D]/60">
+              {currentStreak === 0 ? 'Start your streak!' : currentStreak === 1 ? 'Great start!' : 'Keep it going!'}
+            </p>
           </CardContent>
         </Card>
       </div>
