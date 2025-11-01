@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, RefreshCcw, Video, VideoOff } from 'lucide-react';
 import { API_BASE_URL } from '../config/constants';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -34,13 +34,8 @@ type VideoDevice = {
   index: number;
 };
 
-const toNumber = (value: unknown, fallback = 0) => {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : fallback;
-};
-
 export function LiveSession() {
-  const [metrics, setMetrics] = useState<Metrics>({ ...DEFAULT_METRICS });
+  const [metrics, setMetrics] = useState<Metrics>(DEFAULT_METRICS);
   const [exercise, setExercise] = useState<ExerciseOption>('shoulder_rotation');
   const [statusMessage, setStatusMessage] = useState('');
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -52,16 +47,6 @@ export function LiveSession() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
-
-  const handleMetricsPayload = useCallback((payload: Record<string, unknown>) => {
-    console.log('Live metrics payload:', payload);
-    setMetrics({
-      postureScore: toNumber(payload['posture_score']),
-      alignment: (payload['alignment'] as string) ?? '-',
-      rangeOfMotion: toNumber(payload['range_of_motion']),
-      formQuality: (payload['form_quality'] as string) ?? '-',
-    });
-  }, []);
 
   useEffect(() => {
     refreshDevices();
@@ -175,22 +160,14 @@ export function LiveSession() {
 
     source.addEventListener('metrics', (event) => {
       const data = JSON.parse((event as MessageEvent<string>).data);
-      handleMetricsPayload(data);
+      console.debug('metrics event', data);
+      setMetrics({
+        postureScore: typeof data.posture_score === 'number' ? data.posture_score : 0,
+        alignment: data.alignment ?? '-',
+        rangeOfMotion: typeof data.range_of_motion === 'number' ? data.range_of_motion : 0,
+        formQuality: data.form_quality ?? '-',
+      });
     });
-
-    const handleGenericEvent = (event: MessageEvent<string>) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'metrics' || Object.prototype.hasOwnProperty.call(data, 'posture_score')) {
-        handleMetricsPayload(data);
-        return;
-      }
-      if (data.message) {
-        setStatusMessage(data.message);
-      }
-    };
-
-    source.addEventListener('message', (event) => handleGenericEvent(event as MessageEvent<string>));
-    source.onmessage = handleGenericEvent;
 
     source.onerror = () => {
       setStatusMessage('Connection lost. Please restart the session.');
@@ -200,7 +177,7 @@ export function LiveSession() {
     };
 
     eventSourceRef.current = source;
-    setMetrics({ ...DEFAULT_METRICS });
+    setMetrics(DEFAULT_METRICS);
     setIsSessionActive(true);
   };
 
