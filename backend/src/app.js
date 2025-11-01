@@ -34,8 +34,18 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(xss());
 app.use(mongoSanitize());
 
-// gzip compression
-app.use(compression());
+// gzip compression, but bypass SSE streams to avoid buffering
+app.use(
+  compression({
+    filter: (req, res) => {
+      const acceptHeader = req.headers.accept || '';
+      if (acceptHeader.includes('text/event-stream')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 // enable cors
 app.use(cors());

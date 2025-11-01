@@ -25,13 +25,23 @@ const startSession = (req, res) => {
     cwd: path.join(__dirname, '../../../'),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  logger.info(`pose tracker spawned (exercise=${exercise}, camera=${cameraSource}) pid=${child.pid}`);
 
   child.stdout.on('data', (chunk) => {
     const lines = chunk.toString().split('\n').filter(Boolean);
     lines.forEach((line) => {
       try {
         const payload = JSON.parse(line);
-        sendEvent('metrics', payload);
+        if (payload.error) {
+          sendEvent('status', { message: payload.error, level: 'error', source: payload.source });
+          return;
+        }
+        if (payload.type === 'metrics' || Object.prototype.hasOwnProperty.call(payload, 'posture_score')) {
+          logger.debug(`pose tracker metrics: ${line}`);
+          sendEvent('metrics', payload);
+        } else {
+          sendEvent('status', payload);
+        }
       } catch (error) {
         logger.warn('Failed to parse pose tracker output', { line, error });
       }
@@ -43,6 +53,7 @@ const startSession = (req, res) => {
   });
 
   child.on('close', (code) => {
+    logger.info(`pose tracker exited with code ${code}`);
     sendEvent('status', { message: 'Session ended', code });
     res.end();
   });
@@ -56,6 +67,7 @@ const startSession = (req, res) => {
   req.on('close', () => {
     if (child.exitCode === null) {
       child.kill('SIGTERM');
+      logger.info('pose tracker terminated due to client disconnect');
     }
   });
 
