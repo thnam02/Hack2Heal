@@ -1,5 +1,5 @@
 const Joi = require('joi');
-const { password, objectId } = require('./custom.validation');
+const { password } = require('./custom.validation'); // removed objectId
 
 const createUser = {
   body: Joi.object().keys({
@@ -22,13 +22,14 @@ const getUsers = {
 
 const getUser = {
   params: Joi.object().keys({
-    userId: Joi.string().custom(objectId),
+    // Mongo ObjectId -> numeric id for SQLite
+    userId: Joi.number().integer().required(),
   }),
 };
 
 const updateUser = {
   params: Joi.object().keys({
-    userId: Joi.required().custom(objectId),
+    userId: Joi.number().integer().required(),
   }),
   body: Joi.object()
     .keys({
@@ -41,7 +42,7 @@ const updateUser = {
 
 const deleteUser = {
   params: Joi.object().keys({
-    userId: Joi.string().custom(objectId),
+    userId: Joi.number().integer().required(),
   }),
 };
 

@@ -4,22 +4,7 @@ const logger = require('./config/logger');
 
 let server;
 
-// Only connect to MongoDB if MONGODB_URL is provided
-if (config.mongoose.url) {
-  const mongoose = require('mongoose');
-  mongoose.connect(config.mongoose.url, config.mongoose.options).then(() => {
-    logger.info('Connected to MongoDB');
-    startServer();
-  }).catch((err) => {
-    logger.error('MongoDB connection error:', err);
-    logger.warn('Starting server without MongoDB - authentication features will not work');
-    startServer();
-  });
-} else {
-  logger.warn('MongoDB not configured - starting server without database');
-  logger.warn('Authentication endpoints will return 501 (Not Implemented)');
-  startServer();
-}
+startServer();
 
 function startServer() {
   server = app.listen(config.port, () => {

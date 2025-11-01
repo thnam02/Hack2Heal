@@ -1,0 +1,34 @@
+version: "3.9"
+services:
+  mongodb:
+    image: mongo:6
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - JWT_SECRET=devsecret
+      - MONGODB_URL=mongodb://root:rootpassword@mongodb:27017/hack2heal?authSource=admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    command: ["node", "src/index.js"]
+
+volumes:
+  mongodb_data:

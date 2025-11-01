@@ -1,91 +1,163 @@
-const mongoose = require('mongoose');
-const validator = require('validator');
 const bcrypt = require('bcryptjs');
-const { toJSON, paginate } = require('./plugins');
-const { roles } = require('../config/roles');
+const { getDb } = require('./sqlite');
 
-const userSchema = mongoose.Schema(
-  {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      lowercase: true,
-      validate(value) {
-        if (!validator.isEmail(value)) {
-          throw new Error('Invalid email');
-        }
-      },
-    },
-    password: {
-      type: String,
-      required: true,
-      trim: true,
-      minlength: 8,
-      validate(value) {
-        if (!value.match(/\d/) || !value.match(/[a-zA-Z]/)) {
-          throw new Error('Password must contain at least one letter and one number');
-        }
-      },
-      private: true, // used by the toJSON plugin
-    },
-    role: {
-      type: String,
-      enum: roles,
-      default: 'user',
-    },
-    isEmailVerified: {
-      type: Boolean,
-      default: false,
-    },
-  },
-  {
-    timestamps: true,
+const db = getDb();
+
+db.prepare(
+  `
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
+    isEmailVerified INTEGER NOT NULL DEFAULT 0,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  )
+`
+).run();
+
+function mapRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    isEmailVerified: !!row.isEmailVerified,
+    // Keep API similar to Mongoose doc instances used by auth
+    isPasswordMatch: async (password) => bcrypt.compare(password, row.password),
+  };
+}
+
+async function findById(id) {
+  const row = db.prepare(`SELECT * FROM users WHERE id = ?`).get([id]);
+  return mapRow(row);
+}
+
+async function create(userBody) {
+  const now = new Date().toISOString();
+  const hashed = await bcrypt.hash(userBody.password, 8);
+  const info = db
+    .prepare(
+      `INSERT INTO users (name, email, password, role, isEmailVerified, createdAt, updatedAt)
+       VALUES (@name, @email, @password, @role, @isEmailVerified, @createdAt, @updatedAt)`
+    )
+    .run({
+      name: userBody.name,
+      email: userBody.email,
+      password: hashed,
+      role: userBody.role || 'user',
+      isEmailVerified: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+  return findById(info.lastInsertRowid);
+}
+
+async function isEmailTaken(email, excludeUserId) {
+  const row = db
+    .prepare(
+      excludeUserId
+        ? `SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1`
+        : `SELECT id FROM users WHERE email = ? LIMIT 1`
+    )
+    .get(excludeUserId ? [email, excludeUserId] : [email]);
+  return !!row;
+}
+
+async function paginate(filter = {}, options = {}) {
+  const limit = Math.max(1, Number(options.limit) || 10);
+  const page = Math.max(1, Number(options.page) || 1);
+  const offset = (page - 1) * limit;
+
+  // Filtering
+  const conditions = [];
+  const params = [];
+  if (filter.name) {
+    conditions.push(`name LIKE ?`);
+    params.push(`%${filter.name}%`);
   }
-);
-
-// add plugin that converts mongoose to json
-userSchema.plugin(toJSON);
-userSchema.plugin(paginate);
-
-/**
- * Check if email is taken
- * @param {string} email - The user's email
- * @param {ObjectId} [excludeUserId] - The id of the user to be excluded
- * @returns {Promise<boolean>}
- */
-userSchema.statics.isEmailTaken = async function (email, excludeUserId) {
-  const user = await this.findOne({ email, _id: { $ne: excludeUserId } });
-  return !!user;
-};
-
-/**
- * Check if password matches the user's password
- * @param {string} password
- * @returns {Promise<boolean>}
- */
-userSchema.methods.isPasswordMatch = async function (password) {
-  const user = this;
-  return bcrypt.compare(password, user.password);
-};
-
-userSchema.pre('save', async function (next) {
-  const user = this;
-  if (user.isModified('password')) {
-    user.password = await bcrypt.hash(user.password, 8);
+  if (filter.role) {
+    conditions.push(`role = ?`);
+    params.push(filter.role);
   }
-  next();
-});
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-/**
- * @typedef User
- */
-const User = mongoose.model('User', userSchema);
+  // Sorting
+  let orderBy = 'ORDER BY createdAt DESC';
+  if (options.sortBy) {
+    // format: field:(asc|desc)
+    const [field, direction] = String(options.sortBy).split(':');
+    const dir = direction && direction.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const safeField = ['name', 'email', 'role', 'createdAt', 'updatedAt', 'id'].includes(field) ? field : 'createdAt';
+    orderBy = `ORDER BY ${safeField} ${dir}`;
+  }
 
-module.exports = User;
+  const totalRow = db.prepare(`SELECT COUNT(*) as count FROM users ${whereClause}`).get(params);
+  const rows = db
+    .prepare(`SELECT * FROM users ${whereClause} ${orderBy} LIMIT ? OFFSET ?`)
+    .all([...params, limit, offset])
+    .map(mapRow);
+
+  const totalResults = totalRow.count || 0;
+  const totalPages = Math.max(1, Math.ceil(totalResults / limit));
+
+  return { results: rows, page, limit, totalPages, totalResults };
+}
+
+async function findOne(query) {
+  if (query && query.email) {
+    const row = db.prepare(`SELECT * FROM users WHERE email = ?`).get([query.email]);
+    return mapRow(row);
+  }
+  return null;
+}
+
+async function updateById(id, updateBody) {
+  const user = await findById(id);
+  if (!user) return null;
+
+  const now = new Date().toISOString();
+  let nextIsEmailVerified;
+  if (updateBody.isEmailVerified !== undefined) {
+    nextIsEmailVerified = updateBody.isEmailVerified ? 1 : 0;
+  } else {
+    nextIsEmailVerified = user.isEmailVerified ? 1 : 0;
+  }
+  const next = {
+    name: updateBody.name !== undefined ? updateBody.name : user.name,
+    email: updateBody.email !== undefined ? updateBody.email : user.email,
+    role: updateBody.role !== undefined ? updateBody.role : user.role,
+    isEmailVerified: nextIsEmailVerified,
+    password: updateBody.password !== undefined ? await bcrypt.hash(updateBody.password, 8) : user.password,
+  };
+
+  db
+    .prepare(
+      `UPDATE users SET
+        name = @name,
+        email = @email,
+        password = @password,
+        role = @role,
+        isEmailVerified = @isEmailVerified,
+        updatedAt = @updatedAt
+      WHERE id = @id`
+    )
+    .run({ ...next, updatedAt: now, id });
+
+  return findById(id);
+}
+
+async function deleteById(id) {
+  db.prepare(`DELETE FROM users WHERE id = ?`).run([id]);
+  return true;
+}
+
+module.exports = {
+  create,
+  isEmailTaken,
+  paginate,
+  findById,
+  findOne,
+  updateById,
+  deleteById,
+};
