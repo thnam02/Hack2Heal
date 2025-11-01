@@ -13,17 +13,25 @@ try:
 except ValueError:
     source_value = camera_source
 
+print(json.dumps({"status": "starting", "camera_source": camera_source}))
+sys.stdout.flush()
+
 cap = cv2.VideoCapture(source_value)
 if not cap.isOpened():
     print(json.dumps({"error": "Unable to open camera", "source": camera_source}))
     sys.stdout.flush()
     sys.exit(1)
 
+print(json.dumps({"status": "camera_opened", "camera_source": camera_source}))
+sys.stdout.flush()
+
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(
     min_detection_confidence=0.6,
     min_tracking_confidence=0.6
 )
+
+frame_count = 0
 
 while cap.isOpened():
     ret, frame = cap.read()
@@ -34,8 +42,16 @@ while cap.isOpened():
     results = pose.process(image_rgb)
     metrics = analyze_pose(results.pose_landmarks, exercise_type)
 
-    print(json.dumps(metrics))
+    print(json.dumps({"type": "metrics", **metrics}))
     sys.stdout.flush()
+
+    frame_count += 1
+    if frame_count % 100 == 0:
+        print(json.dumps({"status": "progress", "frames_processed": frame_count}))
+        sys.stdout.flush()
 
 cap.release()
 pose.close()
+
+print(json.dumps({"status": "finished", "frames_processed": frame_count}))
+sys.stdout.flush()
