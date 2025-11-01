@@ -1,352 +1,360 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Play, Square, RefreshCcw, Video, VideoOff } from 'lucide-react';
+import { API_BASE_URL } from '../config/constants';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import { Progress } from './ui/progress';
-import { Video, VideoOff, Pause, Play, StopCircle, RotateCw } from 'lucide-react';
-import { Alert, AlertDescription } from './ui/alert';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from './ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+const DEFAULT_METRICS = {
+  postureScore: 0,
+  alignment: '-',
+  rangeOfMotion: 0,
+  formQuality: '-',
+};
+
+const EXERCISE_OPTIONS = [
+  { value: 'shoulder_rotation', label: 'Shoulder Rotation' },
+  { value: 'squat', label: 'Squat' },
+] as const;
+
+type Metrics = typeof DEFAULT_METRICS;
+type ExerciseOption = (typeof EXERCISE_OPTIONS)[number]['value'];
+
+type StatusEvent = {
+  message?: string;
+  level?: 'error' | 'info';
+  code?: number;
+};
+
+type VideoDevice = {
+  deviceId: string;
+  label: string;
+  index: number;
+};
 
 export function LiveSession() {
-  const [isStreaming, setIsStreaming] = useState(false);
+  const [metrics, setMetrics] = useState<Metrics>(DEFAULT_METRICS);
+  const [exercise, setExercise] = useState<ExerciseOption>('shoulder_rotation');
+  const [statusMessage, setStatusMessage] = useState('');
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [reps, setReps] = useState(0);
-  const [sets, setSets] = useState(1);
-  const [sessionTime, setSessionTime] = useState(0);
-  const [showSummary, setShowSummary] = useState(false);
+  const [isPreviewActive, setIsPreviewActive] = useState(false);
+  const [devices, setDevices] = useState<VideoDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [selectedCameraIndex, setSelectedCameraIndex] = useState<string>('0');
+
+  const eventSourceRef = useRef<EventSource | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isSessionActive && !isPaused) {
-      interval = setInterval(() => {
-        setSessionTime((prev) => prev + 1);
-        // Simulate rep counting
-        if (Math.random() > 0.85) {
-          setReps((prev) => {
-            const newReps = prev + 1;
-            if (newReps >= 10) {
-              setSets((prevSets) => prevSets + 1);
-              return 0;
-            }
-            return newReps;
-          });
-        }
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isSessionActive, isPaused]);
+    refreshDevices();
+  }, []);
 
-  const startWebcam = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { width: 1280, height: 720 }, 
-        audio: false 
+
+  useEffect(() => {
+    return () => {
+      eventSourceRef.current?.close();
+      stopPreview();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isPreviewActive || !previewStream) {
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    video.srcObject = previewStream;
+    const playPromise = video.play();
+    if (playPromise) {
+      playPromise.catch(() => {
+        /* autoplay may require user gesture */
       });
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
-        setIsStreaming(true);
+    }
+    return () => {
+      if (video.srcObject === previewStream) {
+        video.srcObject = null;
       }
-    } catch (err) {
-      console.error('Error accessing webcam:', err);
+    };
+  }, [isPreviewActive, previewStream]);
+
+  const refreshDevices = async () => {
+    try {
+      const devicesList = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devicesList
+        .filter((device) => device.kind === 'videoinput')
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          label: device.label || `Camera ${index + 1}`,
+          index,
+        }));
+
+      setDevices(videoInputs);
+      if (videoInputs.length) {
+        setSelectedDeviceId(videoInputs[0].deviceId);
+        setSelectedCameraIndex(String(videoInputs[0].index));
+      }
+    } catch (error) {
+      console.error('Failed to enumerate devices', error);
+      setStatusMessage('Unable to access cameras. Check permissions.');
     }
   };
 
-  const stopWebcam = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
+  const startPreview = async () => {
+    if (!selectedDeviceId) {
+      setStatusMessage('Select a camera before starting the preview.');
+      return;
     }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: selectedDeviceId } },
+        audio: false,
+      });
+      setPreviewStream(stream);
+      setIsPreviewActive(true);
+      setStatusMessage('Preview running. When ready, click Start Analysis.');
+    } catch (error) {
+      console.error('Unable to start preview', error);
+      setStatusMessage('Preview failed. Make sure the camera is not in use by another app.');
+    }
+  };
+
+  const stopPreview = () => {
+    if (previewStream) {
+      previewStream.getTracks().forEach((track) => track.stop());
+    }
+    setPreviewStream(null);
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    setIsStreaming(false);
-    setIsSessionActive(false);
+    setIsPreviewActive(false);
   };
 
   const startSession = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
+    const url = new URL(`${API_BASE_URL}/sessions/start`);
+    url.searchParams.set('exercise', exercise);
+    url.searchParams.set('camera', selectedCameraIndex);
+
+    const source = new EventSource(url.toString());
+
+    source.addEventListener('status', (event) => {
+      const data = JSON.parse((event as MessageEvent<string>).data) as StatusEvent;
+      if (data.level === 'error') {
+        setStatusMessage(`⚠️ ${data.message ?? 'Session error'}`);
+        setIsSessionActive(false);
+        return;
+      }
+      if (data.message) {
+        setStatusMessage(data.message);
+      }
+      if (data.code !== undefined) {
+        setIsSessionActive(false);
+      }
+    });
+
+    source.addEventListener('metrics', (event) => {
+      const data = JSON.parse((event as MessageEvent<string>).data);
+      setMetrics({
+        postureScore: typeof data.posture_score === 'number' ? data.posture_score : 0,
+        alignment: data.alignment ?? '-',
+        rangeOfMotion: typeof data.range_of_motion === 'number' ? data.range_of_motion : 0,
+        formQuality: data.form_quality ?? '-',
+      });
+    });
+
+    source.onerror = () => {
+      setStatusMessage('Connection lost. Please restart the session.');
+      setIsSessionActive(false);
+      source.close();
+      eventSourceRef.current = null;
+    };
+
+    eventSourceRef.current = source;
+    setMetrics(DEFAULT_METRICS);
     setIsSessionActive(true);
-    setIsPaused(false);
-    setSessionTime(0);
-    setReps(0);
-    setSets(1);
   };
 
   const endSession = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
     setIsSessionActive(false);
-    setShowSummary(true);
+    setStatusMessage('Session ended.');
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const postureScore = 87;
-  const alignmentStatus = 'Correct';
-  const rangeOfMotion = 78;
-  const formQuality = 'Good';
+  const deviceOptions = useMemo(() => {
+    return devices.map((device) => ({
+      value: device.deviceId,
+      label: `${device.label} (cv2 index ${device.index})`,
+      indexValue: String(device.index),
+    }));
+  }, [devices]);
 
   return (
     <div className="space-y-6 max-w-7xl">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-[#2C2E6F] mb-2">Live Exercise Session</h1>
-          <p className="text-gray-600">Computer vision-powered form analysis</p>
+          <p className="text-gray-600">Use your OBS Virtual Camera (or other webcam) for live pose analysis.</p>
         </div>
         <Badge className="bg-gradient-to-r from-[#2C2E6F] to-[#4DD2C1] text-white px-4 py-2">
-          Shoulder Rotation Exercise
+          OBS Workflow
         </Badge>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Webcam Feed */}
         <Card className="lg:col-span-2 border-0 shadow-xl">
           <CardContent className="p-6 space-y-4">
-            <div className="relative bg-slate-900 rounded-2xl overflow-hidden aspect-video">
-              {isStreaming ? (
-                <>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                  {/* Overlay skeleton ghost model */}
-                  <div className="absolute inset-0 pointer-events-none">
-                    {/* Center guide lines */}
-                    <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      <line x1="50" y1="0" x2="50" y2="100" stroke="rgba(77, 210, 193, 0.4)" strokeWidth="0.3" strokeDasharray="2,2" />
-                      <line x1="0" y1="50" x2="100" y2="50" stroke="rgba(77, 210, 193, 0.4)" strokeWidth="0.3" strokeDasharray="2,2" />
-                      {/* Pose guide circles */}
-                      <circle cx="50" cy="20" r="3" fill="rgba(77, 210, 193, 0.6)" />
-                      <circle cx="45" cy="30" r="2" fill="rgba(77, 210, 193, 0.6)" />
-                      <circle cx="55" cy="30" r="2" fill="rgba(77, 210, 193, 0.6)" />
-                    </svg>
-                  </div>
-                  {/* Real-time feedback toast */}
-                  {isSessionActive && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2">
-                      <div className="bg-[#4DD2C1] text-white px-6 py-3 rounded-full shadow-lg">
-                        ✨ Nice! Keep shoulders level.
-                      </div>
-                    </div>
-                  )}
-                </>
+            <div className="relative bg-slate-900 rounded-2xl overflow-hidden aspect-video flex items-center justify-center text-slate-300">
+              {isPreviewActive && previewStream ? (
+                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <div className="text-center text-slate-400">
-                    <VideoOff className="w-20 h-20 mx-auto mb-4 opacity-50" />
-                    <p>Camera is off</p>
-                    <p className="text-sm">Click "Start Camera" to begin</p>
-                  </div>
+                <div className="text-center space-y-3">
+                  <VideoOff className="w-12 h-12 mx-auto text-[#4DD2C1]" />
+                  <p className="text-lg">Start the preview to verify your OBS feed.</p>
+                  <p className="text-sm text-slate-400">Select the virtual camera and click “Start Preview”.</p>
                 </div>
               )}
             </div>
 
-            {/* Session Controls */}
-            {isStreaming && (
-              <div className="grid grid-cols-3 gap-4 p-6 bg-gradient-to-br from-[#E9E6F9] to-white rounded-xl">
-                <div className="text-center">
-                  <p className="text-sm text-gray-600 mb-1">Reps</p>
-                  <p className="text-3xl text-[#2C2E6F]">{reps}/10</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-600 mb-1">Set</p>
-                  <p className="text-3xl text-[#4DD2C1]">{sets}/3</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-sm text-gray-600 mb-1">Time</p>
-                  <p className="text-3xl text-[#FF8A73]">{formatTime(sessionTime)}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Control Buttons */}
-            <div className="flex gap-3">
-              {!isStreaming ? (
-                <Button 
-                  onClick={startWebcam}
-                  className="flex-1 bg-[#2C2E6F] hover:bg-[#1f2050] h-12"
+            <div className="grid gap-4 md:grid-cols-3 md:items-center bg-[#E9E6F9] rounded-xl p-4">
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Camera</p>
+                <Select
+                  value={selectedDeviceId}
+                  onValueChange={(value) => {
+                    setSelectedDeviceId(value);
+                    const option = deviceOptions.find((item) => item.value === value);
+                    if (option) {
+                      setSelectedCameraIndex(option.indexValue);
+                    }
+                  }}
                 >
-                  <Video className="w-5 h-5 mr-2" />
-                  Start Camera
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Select camera" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {deviceOptions.map((device) => (
+                      <SelectItem key={device.value} value={device.value}>
+                        {device.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Exercise</p>
+                <Select value={exercise} onValueChange={(value) => setExercise(value as ExerciseOption)}>
+                  <SelectTrigger className="w-full bg-white">
+                    <SelectValue placeholder="Select exercise" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EXERCISE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2 text-sm text-gray-600">
+                <p className="font-medium text-[#2C2E6F]">Quick Steps</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Open OBS Camera on your phone.</li>
+                  <li>Choose “OBS Virtual Camera” above & start preview.</li>
+                  <li>Click “Start Analysis” to stream metrics from Python.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <Button variant="secondary" onClick={refreshDevices} className="h-12">
+                <RefreshCcw className="w-4 h-4 mr-2" /> Refresh Cameras
+              </Button>
+              <Button onClick={isPreviewActive ? stopPreview : startPreview} className="h-12">
+                {isPreviewActive ? (
+                  <>
+                    <VideoOff className="w-4 h-4 mr-2" /> Stop Preview
+                  </>
+                ) : (
+                  <>
+                    <Video className="w-4 h-4 mr-2" /> Start Preview
+                  </>
+                )}
+              </Button>
+              {!isSessionActive ? (
+                <Button onClick={startSession} className="flex-1 bg-gradient-to-r from-[#4DD2C1] to-[#3bc1b0] h-12">
+                  <Play className="w-5 h-5 mr-2" /> Start Analysis
                 </Button>
               ) : (
-                <>
-                  {!isSessionActive ? (
-                    <Button 
-                      onClick={startSession}
-                      className="flex-1 bg-gradient-to-r from-[#4DD2C1] to-[#3bc1b0] hover:shadow-lg h-12"
-                    >
-                      <Play className="w-5 h-5 mr-2" />
-                      Start Session
-                    </Button>
-                  ) : (
-                    <>
-                      <Button 
-                        onClick={() => setIsPaused(!isPaused)}
-                        variant="outline"
-                        className="flex-1 h-12"
-                      >
-                        {isPaused ? <Play className="w-5 h-5 mr-2" /> : <Pause className="w-5 h-5 mr-2" />}
-                        {isPaused ? 'Resume' : 'Pause'}
-                      </Button>
-                      <Button 
-                        onClick={endSession}
-                        className="flex-1 bg-[#FF8A73] hover:bg-[#ff7a5c] h-12"
-                      >
-                        <StopCircle className="w-5 h-5 mr-2" />
-                        End Session
-                      </Button>
-                    </>
-                  )}
-                  <Button 
-                    onClick={stopWebcam}
-                    variant="outline"
-                    className="h-12"
-                  >
-                    <VideoOff className="w-5 h-5" />
-                  </Button>
-                  <Button variant="outline" className="h-12">
-                    <RotateCw className="w-5 h-5" />
-                  </Button>
-                </>
+                <Button onClick={endSession} variant="destructive" className="flex-1 h-12 bg-[#FF8A73]">
+                  <Square className="w-5 h-5 mr-2" /> End Analysis
+                </Button>
               )}
             </div>
+
+            {statusMessage && (
+              <div className="text-sm text-gray-500 bg-white border border-dashed border-[#4DD2C1]/40 rounded-lg p-3">
+                {statusMessage}
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* Posture Analysis Sidebar */}
-        <div className="space-y-4">
-          <Card className="border-0 shadow-lg">
-            <CardHeader>
-              <CardTitle className="text-[#2C2E6F]">Posture Analysis</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Posture Score */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Posture Score</span>
-                  <span className="text-[#4DD2C1]">{postureScore}%</span>
+        <Card className="border-0 shadow-xl h-fit">
+          <CardHeader>
+            <CardTitle className="text-[#2C2E6F]">Real-Time Metrics</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Posture Score</p>
+                  <p className="text-3xl font-semibold text-[#2C2E6F]">{Math.round(metrics.postureScore)}%</p>
                 </div>
-                <Progress value={postureScore} className="h-3" />
+                <Progress value={Math.min(100, Math.max(0, metrics.postureScore))} className="h-2" />
               </div>
 
-              {/* Alignment */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Alignment</span>
-                  <Badge className="bg-green-100 text-green-700">{alignmentStatus}</Badge>
-                </div>
-                <div className="h-3 bg-green-100 rounded-full">
-                  <div className="h-full w-full bg-green-500 rounded-full" />
-                </div>
+              <div>
+                <p className="text-sm text-gray-500">Alignment</p>
+                <p className="text-lg text-[#4DD2C1]">{metrics.alignment}</p>
               </div>
 
-              {/* Range of Motion */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Range of Motion</span>
-                  <span className="text-orange-600">{rangeOfMotion}°</span>
-                </div>
-                <Progress value={rangeOfMotion} className="h-3" />
+              <div>
+                <p className="text-sm text-gray-500">Range of Motion</p>
+                <p className="text-lg text-[#2C2E6F]">{Math.round(metrics.rangeOfMotion)}°</p>
               </div>
 
-              {/* Form Quality */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-600">Form Quality</span>
-                  <Badge className="bg-[#4DD2C1] text-white">{formQuality}</Badge>
-                </div>
-                <div className="h-3 bg-[#E9E6F9] rounded-full">
-                  <div className="h-full w-[85%] bg-[#4DD2C1] rounded-full" />
-                </div>
+              <div>
+                <p className="text-sm text-gray-500">Form Quality</p>
+                <p className="text-lg font-medium text-[#FF8A73]">{metrics.formQuality}</p>
               </div>
-            </CardContent>
-          </Card>
+            </div>
 
-          {/* Exercise Instructions */}
-          <Card className="border-0 shadow-lg bg-gradient-to-br from-[#E9E6F9] to-white">
-            <CardHeader>
-              <CardTitle className="text-[#2C2E6F]">Exercise Instructions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-start gap-2">
-                  <div className="w-6 h-6 bg-[#2C2E6F] text-white rounded-full flex items-center justify-center flex-shrink-0 text-sm">1</div>
-                  <p className="text-sm text-gray-700">Stand with feet shoulder-width apart</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-6 h-6 bg-[#2C2E6F] text-white rounded-full flex items-center justify-center flex-shrink-0 text-sm">2</div>
-                  <p className="text-sm text-gray-700">Keep your back straight and core engaged</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-6 h-6 bg-[#2C2E6F] text-white rounded-full flex items-center justify-center flex-shrink-0 text-sm">3</div>
-                  <p className="text-sm text-gray-700">Rotate shoulders slowly in circles</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-6 h-6 bg-[#2C2E6F] text-white rounded-full flex items-center justify-center flex-shrink-0 text-sm">4</div>
-                  <p className="text-sm text-gray-700">Complete 3 sets of 10 repetitions</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="pt-4 border-t border-dashed border-[#E9E6F9] space-y-2">
+              <h4 className="text-sm text-gray-500 uppercase tracking-wide">Tips</h4>
+              <ul className="space-y-2 text-sm text-gray-600">
+                <li>• Keep the OBS virtual camera active while analysing.</li>
+                <li>• If metrics stay at 0, ensure the correct cv2 index is chosen.</li>
+                <li>• Refresh cameras if you plug/unplug devices.</li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Session Summary Dialog */}
-      <Dialog open={showSummary} onOpenChange={setShowSummary}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-[#2C2E6F]">Session Complete! 🎉</DialogTitle>
-            <DialogDescription>
-              Great work on your shoulder rehabilitation
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            <div className="grid grid-cols-3 gap-4">
-              <div className="text-center p-4 bg-[#E9E6F9] rounded-xl">
-                <p className="text-2xl text-[#2C2E6F] mb-1">94%</p>
-                <p className="text-sm text-gray-600">Accuracy</p>
-              </div>
-              <div className="text-center p-4 bg-[#E9E6F9] rounded-xl">
-                <p className="text-2xl text-[#4DD2C1] mb-1">{formatTime(sessionTime)}</p>
-                <p className="text-sm text-gray-600">Duration</p>
-              </div>
-              <div className="text-center p-4 bg-[#E9E6F9] rounded-xl">
-                <p className="text-2xl text-[#FF8A73] mb-1">+50</p>
-                <p className="text-sm text-gray-600">XP Earned</p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-gradient-to-r from-[#2C2E6F] to-[#4DD2C1] rounded-xl text-white text-center">
-              <p className="mb-2">Achievement Unlocked!</p>
-              <p className="text-sm opacity-90">Perfect Form Master 🏆</p>
-            </div>
-
-            <Button 
-              onClick={() => setShowSummary(false)}
-              className="w-full bg-[#2C2E6F] hover:bg-[#1f2050]"
-            >
-              Continue
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
