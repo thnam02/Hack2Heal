@@ -1,9 +1,10 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const logger = require('../config/logger');
 
 const PYTHON_EXECUTABLE = process.env.PYTHON_EXECUTABLE || 'python3';
-const SCRIPT_PATH = path.join(__dirname, '../../../python/pose_tracker.py');
+const SCRIPT_PATH = path.join(__dirname, '../../../ai_engine/pose_tracker.py');
 
 const startSession = (req, res) => {
   const exercise = req.query.exercise || 'shoulder_rotation';
@@ -20,6 +21,17 @@ const startSession = (req, res) => {
     res.write(`event: ${event}\n`);
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
+
+  // Check if Python script exists
+  if (!fs.existsSync(SCRIPT_PATH)) {
+    logger.error(`Python script not found at ${SCRIPT_PATH}`);
+    sendEvent('status', {
+      message: `Python pose tracker script not found at ${SCRIPT_PATH}. Please check backend setup.`,
+      level: 'error',
+    });
+    res.end();
+    return;
+  }
 
   const child = spawn(PYTHON_EXECUTABLE, [SCRIPT_PATH, exercise, cameraSource], {
     cwd: path.join(__dirname, '../../../'),
@@ -60,7 +72,13 @@ const startSession = (req, res) => {
 
   child.on('error', (error) => {
     logger.error('pose tracker process error', error);
-    sendEvent('status', { message: 'Pose tracker failed to start', level: 'error' });
+    let errorMsg = 'Pose tracker failed to start';
+    if (error.code === 'ENOENT') {
+      errorMsg = `Python executable not found (${PYTHON_EXECUTABLE}). Please install Python 3.`;
+    } else if (error.message) {
+      errorMsg = `Error: ${error.message}`;
+    }
+    sendEvent('status', { message: errorMsg, level: 'error' });
     res.end();
   });
 

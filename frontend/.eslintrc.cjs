@@ -16,5 +16,16 @@ module.exports = {
     ],
     '@typescript-eslint/no-explicit-any': 'warn',
   },
+  overrides: [
+    {
+      files: [
+        'src/components/ui/**/*.tsx',
+        'src/contexts/**/*.tsx',
+      ],
+      rules: {
+        'react-refresh/only-export-components': 'off',
+      },
+    },
+  ],
 }
 

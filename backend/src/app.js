@@ -44,7 +44,7 @@ app.use(
       }
       return compression.filter(req, res);
     },
-  }),
+  })
 );
 
 // enable cors

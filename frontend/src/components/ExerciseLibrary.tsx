@@ -1,239 +1,310 @@
-import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
+import { Dumbbell, Clock, ArrowRight, Search } from 'lucide-react';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Search, Clock, Target, TrendingUp } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select';
+import { Progress } from './ui/progress';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-const exercises = [
+interface Exercise {
+  id: string;
+  name: string;
+  sets: string;
+  reps: string;
+  difficulty: string;
+  description: string;
+  tags: string[];
+  instructions: string[];
+  progress: number;
+  completedSessions: number;
+  totalSessions: number;
+}
+
+const exercises: Exercise[] = [
   {
-    id: 1,
+    id: 'ex-001',
     name: 'Shoulder Rotation',
-    category: 'Upper Body',
-    difficulty: 'Beginner',
-    duration: '10 min',
-    sets: 3,
-    reps: 10,
-    description: 'Gentle shoulder rotations to improve mobility and reduce stiffness.',
-    targetAreas: ['Shoulders', 'Upper Back']
-  },
-  {
-    id: 2,
-    name: 'Knee Extension',
-    category: 'Lower Body',
+    sets: '3',
+    reps: '10',
     difficulty: 'Intermediate',
-    duration: '15 min',
-    sets: 3,
-    reps: 12,
-    description: 'Strengthen quadriceps and improve knee stability.',
-    targetAreas: ['Quadriceps', 'Knees']
+    tags: ['Shoulder', 'Mobility'],
+    description: 'Improve shoulder range of motion and rotator cuff strength',
+    instructions: [
+      'Stand with feet shoulder-width apart, arms at your sides',
+      'Raise your arms to shoulder height, keeping elbows bent at 90°',
+      'Slowly rotate your shoulders forward, then backward',
+      'Maintain controlled movement throughout the exercise'
+    ],
+    progress: 67,
+    completedSessions: 2,
+    totalSessions: 3,
   },
   {
-    id: 3,
-    name: 'Spinal Twist',
-    category: 'Core',
+    id: 'ex-002',
+    name: 'Pec Stretch',
+    sets: '3',
+    reps: '30s',
     difficulty: 'Beginner',
-    duration: '8 min',
-    sets: 2,
-    reps: 8,
-    description: 'Improve spinal mobility and reduce lower back tension.',
-    targetAreas: ['Lower Back', 'Core']
+    tags: ['Shoulder', 'Chest', 'Posture'],
+    description: 'Open chest and improve rounded shoulder posture',
+    instructions: [
+      'Stand in a doorway with your arm raised to 90 degrees',
+      'Place your forearm against the door frame',
+      'Gently lean forward until you feel a stretch in your chest',
+      'Hold for 30 seconds and breathe deeply'
+    ],
+    progress: 100,
+    completedSessions: 3,
+    totalSessions: 3,
   },
   {
-    id: 4,
+    id: 'ex-003',
+    name: 'Neck Retraction',
+    sets: '3',
+    reps: '10',
+    difficulty: 'Beginner',
+    tags: ['Neck', 'Posture'],
+    description: 'Improve cervical alignment and reduce neck strain',
+    instructions: [
+      'Sit or stand with good posture, looking straight ahead',
+      'Gently draw your chin straight back, creating a double chin',
+      'Hold for 5 seconds, keeping your eyes level',
+      'Return to starting position and repeat'
+    ],
+    progress: 33,
+    completedSessions: 1,
+    totalSessions: 3,
+  },
+  {
+    id: 'ex-004',
+    name: 'Scapular Squeeze',
+    sets: '3',
+    reps: '15',
+    difficulty: 'Intermediate',
+    tags: ['Shoulder', 'Back', 'Strength'],
+    description: 'Strengthen upper back muscles for better posture',
+    instructions: [
+      'Sit or stand with arms at your sides',
+      'Squeeze your shoulder blades together',
+      'Hold for 3 seconds while keeping shoulders down',
+      'Release slowly and repeat'
+    ],
+    progress: 0,
+    completedSessions: 0,
+    totalSessions: 5,
+  },
+  {
+    id: 'ex-005',
+    name: 'Wall Push-Up',
+    sets: '2',
+    reps: '15',
+    difficulty: 'Beginner',
+    tags: ['Shoulder', 'Core', 'Upper Body'],
+    description: 'Gentle upper body strengthening with minimal joint stress',
+    instructions: [
+      'Stand arm\'s length from a wall',
+      'Place hands flat against wall at shoulder height',
+      'Bend elbows to bring chest toward wall',
+      'Push back to starting position with control'
+    ],
+    progress: 50,
+    completedSessions: 1,
+    totalSessions: 2,
+  },
+  {
+    id: 'ex-006',
     name: 'Hip Flexor Stretch',
-    category: 'Lower Body',
+    sets: '3',
+    reps: '30s',
     difficulty: 'Beginner',
-    duration: '12 min',
-    sets: 3,
-    reps: 10,
-    description: 'Release tight hip flexors and improve hip mobility.',
-    targetAreas: ['Hip Flexors', 'Glutes']
+    tags: ['Hip', 'Flexibility'],
+    description: 'Release tight hip flexors and improve posture',
+    instructions: [
+      'Kneel on one knee with the other foot flat in front',
+      'Keep your back straight and core engaged',
+      'Gently push hips forward until you feel a stretch',
+      'Hold for 30 seconds, then switch sides'
+    ],
+    progress: 67,
+    completedSessions: 2,
+    totalSessions: 3,
   },
-  {
-    id: 5,
-    name: 'Neck Mobility',
-    category: 'Upper Body',
-    difficulty: 'Beginner',
-    duration: '6 min',
-    sets: 2,
-    reps: 10,
-    description: 'Gentle neck movements to reduce tension and improve range of motion.',
-    targetAreas: ['Neck', 'Shoulders']
-  },
-  {
-    id: 6,
-    name: 'Wall Push-up',
-    category: 'Upper Body',
-    difficulty: 'Intermediate',
-    duration: '10 min',
-    sets: 3,
-    reps: 15,
-    description: 'Build upper body strength with modified push-ups.',
-    targetAreas: ['Chest', 'Arms', 'Shoulders']
-  },
-  {
-    id: 7,
-    name: 'Ankle Circles',
-    category: 'Lower Body',
-    difficulty: 'Beginner',
-    duration: '5 min',
-    sets: 2,
-    reps: 12,
-    description: 'Improve ankle mobility and reduce stiffness.',
-    targetAreas: ['Ankles', 'Calves']
-  },
-  {
-    id: 8,
-    name: 'Core Stability',
-    category: 'Core',
-    difficulty: 'Advanced',
-    duration: '20 min',
-    sets: 4,
-    reps: 10,
-    description: 'Advanced core strengthening exercises for stability.',
-    targetAreas: ['Core', 'Lower Back']
-  }
 ];
+
+const getLevelColor = (level: string) => {
+  switch (level) {
+    case 'Beginner':
+      return 'bg-[#3ECF8E]/10 text-[#3ECF8E]';
+    case 'Intermediate':
+      return 'bg-[#6F66FF]/10 text-[#6F66FF]';
+    case 'Advanced':
+      return 'bg-[#F87171]/10 text-[#F87171]';
+    default:
+      return 'bg-[#1B1E3D]/10 text-[#1B1E3D]';
+  }
+};
 
 export function ExerciseLibrary() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [difficultyFilter, setDifficultyFilter] = useState('all');
+  const navigate = useNavigate();
 
-  const filteredExercises = exercises.filter(exercise => {
-    const matchesSearch = exercise.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         exercise.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || exercise.category === categoryFilter;
-    const matchesDifficulty = difficultyFilter === 'all' || exercise.difficulty === difficultyFilter;
-    
-    return matchesSearch && matchesCategory && matchesDifficulty;
-  });
-
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Beginner':
-        return 'bg-green-100 text-green-700 border-green-200';
-      case 'Intermediate':
-        return 'bg-orange-100 text-orange-700 border-orange-200';
-      case 'Advanced':
-        return 'bg-red-100 text-red-700 border-red-200';
-      default:
-        return 'bg-slate-100 text-slate-700 border-slate-200';
-    }
+  const handleStartExercise = (exercise: Exercise) => {
+    // Store exercise in sessionStorage for LiveSession to pick up
+    sessionStorage.setItem('selectedExercise', JSON.stringify(exercise));
+    navigate('/live-session');
   };
 
+  const filteredExercises = exercises.filter(ex =>
+    ex.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    ex.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const completedToday = exercises.filter(ex => ex.progress === 100).length;
+  const totalExercises = exercises.length;
+
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="p-8">
       {/* Header */}
-      <div>
-        <h1 className="text-[#2C2E6F] mb-2">Exercise Library</h1>
-        <p className="text-gray-600">Browse and assign exercises to your recovery plan</p>
+      <div className="mb-8">
+        <h1 className="text-3xl mb-2 text-[#2C2E6F]">My Exercise Library</h1>
+        <p className="text-[#1B1E3D]/60">Your personalized exercises prescribed by your physiotherapist.</p>
+        <div 
+          className="mt-4 text-white rounded-2xl p-6 shadow-lg"
+          style={{
+            background: 'linear-gradient(to right, #6F66FF, #8C7BFF)',
+            backgroundColor: '#6F66FF',
+            backgroundImage: 'linear-gradient(to right, #6F66FF, #8C7BFF)',
+          }}
+        >
+          <p className="text-center">Let's continue your recovery journey 🧠💪</p>
+          <p className="text-center text-sm opacity-80 mt-1">
+            These exercises are automatically generated from your treatment plan.
+          </p>
+        </div>
       </div>
 
-      <Card className="border-0 shadow-lg">
-        <CardContent className="p-6 space-y-4">
-          {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input
-                placeholder="Search exercises..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="Upper Body">Upper Body</SelectItem>
-                <SelectItem value="Lower Body">Lower Body</SelectItem>
-                <SelectItem value="Core">Core</SelectItem>
-              </SelectContent>
-            </Select>
+      {/* Search Bar */}
+      <div className="mb-6 flex gap-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#1B1E3D]/40" size={20} />
+          <Input
+            type="text"
+            placeholder="Search your prescribed exercises..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="rounded-xl pl-12"
+          />
+        </div>
+        <Button variant="outline" className="rounded-xl">
+          Sort by Body Area
+        </Button>
+        <Button variant="outline" className="rounded-xl">
+          Sort by Difficulty
+        </Button>
+      </div>
 
-            <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Difficulty" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Levels</SelectItem>
-                <SelectItem value="Beginner">Beginner</SelectItem>
-                <SelectItem value="Intermediate">Intermediate</SelectItem>
-                <SelectItem value="Advanced">Advanced</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+      {/* Exercise Grid */}
+      <div className="grid grid-cols-3 gap-6 mb-8">
+        {filteredExercises.map((exercise) => (
+          <Card
+            key={exercise.id}
+            className="rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-200"
+          >
+            <CardHeader>
+              <div className="flex items-start justify-between mb-2">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#6F66FF] to-[#8C7BFF] flex items-center justify-center">
+                  <Dumbbell className="text-white" size={24} />
+                </div>
+                <Badge className={getLevelColor(exercise.difficulty)}>
+                  {exercise.difficulty}
+                </Badge>
+              </div>
+              <CardTitle className="text-lg">{exercise.name}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-[#1B1E3D]/60">
+                  <Clock size={16} />
+                  <span>{exercise.sets} sets × {exercise.reps} reps</span>
+                </div>
 
-          {/* Exercise Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredExercises.map((exercise) => (
-              <Card key={exercise.id} className="border-0 shadow hover:shadow-lg transition-shadow">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <h4 className="text-[#2C2E6F]">{exercise.name}</h4>
-                    <Badge variant="outline" className={getDifficultyColor(exercise.difficulty)}>
-                      {exercise.difficulty}
+                <p className="text-sm text-[#1B1E3D]/70 leading-relaxed">
+                  {exercise.description}
+                </p>
+
+                <div className="flex flex-wrap gap-2">
+                  {exercise.tags.map((tag, tagIndex) => (
+                    <Badge
+                      key={tagIndex}
+                      variant="outline"
+                      className="text-xs border-[#1B1E3D]/20"
+                    >
+                      {tag}
                     </Badge>
+                  ))}
+                </div>
+
+                {/* Progress Indicator */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between text-sm text-[#1B1E3D]/60 mb-2">
+                    <span>Progress this week</span>
+                    <span>{exercise.completedSessions} of {exercise.totalSessions} sessions</span>
                   </div>
+                  <Progress value={exercise.progress} className="h-2" />
+                </div>
 
-                  <p className="text-gray-600">{exercise.description}</p>
+                {/* Action Button */}
+                <Button
+                  onClick={() => handleStartExercise(exercise)}
+                  className="w-full bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF] hover:opacity-90 rounded-xl group"
+                >
+                  {exercise.progress === 100 ? 'Practice Again' : 'Let\'s Go'}
+                  <ArrowRight size={16} className="ml-2 group-hover:translate-x-1 transition-transform" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    {exercise.targetAreas.map((area) => (
-                      <Badge key={area} className="bg-[#E9E6F9] text-[#2C2E6F] text-xs">
-                        {area}
-                      </Badge>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100">
-                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                      <Clock className="w-3 h-3" />
-                      {exercise.duration}
-                    </div>
-                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                      <Target className="w-3 h-3" />
-                      {exercise.sets} sets
-                    </div>
-                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                      <TrendingUp className="w-3 h-3" />
-                      {exercise.reps} reps
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <Button size="sm" variant="outline" className="flex-1 hover:bg-[#E9E6F9] hover:text-[#2C2E6F] hover:border-[#2C2E6F]">
-                      View Details
-                    </Button>
-                    <Button size="sm" className="flex-1 bg-[#4DD2C1] hover:bg-[#3bc1b0]">
-                      Assign
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {filteredExercises.length === 0 && (
-            <div className="text-center py-12 text-gray-500">
-              <p>No exercises found matching your criteria.</p>
+      {/* Progress Summary Bar */}
+      <Card className="rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)] bg-gradient-to-br from-[#3ECF8E]/10 to-[#3ECF8E]/5 border-2 border-[#3ECF8E]/20">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-[#3ECF8E] flex items-center justify-center text-white text-xl">
+                {completedToday === totalExercises ? '🎉' : '💪'}
+              </div>
+              <div>
+                <p className="text-lg">
+                  {completedToday === totalExercises ? (
+                    <>Amazing work! You've completed all exercises today! 🎉</>
+                  ) : (
+                    <>You've completed {completedToday} of {totalExercises} exercises today!</>
+                  )}
+                </p>
+                <p className="text-sm text-[#1B1E3D]/60 mt-1">
+                  Keep up the great work on your recovery journey
+                </p>
+              </div>
             </div>
-          )}
+            <div className="text-right">
+              <div className="text-3xl text-[#3ECF8E]">
+                {Math.round((completedToday / totalExercises) * 100)}%
+              </div>
+              <p className="text-sm text-[#1B1E3D]/60">Complete</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Footer */}
+      <div className="mt-6 text-center text-sm text-[#1B1E3D]/60">
+        <p>
+          Exercises are automatically generated from your latest rehab plan — prescribed by your clinician and powered by AI Plan Reader.
+        </p>
+      </div>
     </div>
   );
 }

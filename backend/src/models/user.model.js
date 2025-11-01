@@ -36,6 +36,10 @@ async function findById(id) {
 async function create(userBody) {
   const now = new Date().toISOString();
   const hashed = await bcrypt.hash(userBody.password, 8);
+
+  // Validate role: must be 'patient' or 'clinician', default to 'patient' if not provided
+  const validRoles = ['patient', 'clinician'];
+  const role = userBody.role && validRoles.includes(userBody.role) ? userBody.role : 'patient';
   const info = db
     .prepare(
       `INSERT INTO users (name, email, password, role, isEmailVerified, createdAt, updatedAt)
@@ -45,7 +49,7 @@ async function create(userBody) {
       name: userBody.name,
       email: userBody.email,
       password: hashed,
-      role: userBody.role || 'user',
+      role,
       isEmailVerified: 0,
       createdAt: now,
       updatedAt: now,

@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   Send,
   Activity,
-  Target
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -88,12 +87,6 @@ const recoveryPhases = [
 ];
 
 export function AnalyticsPrediction() {
-  const getRiskColor = (score: number) => {
-    if (score >= 0.7) return 'text-red-600 bg-red-100';
-    if (score >= 0.5) return 'text-orange-600 bg-orange-100';
-    return 'text-yellow-600 bg-yellow-100';
-  };
-
   const getRiskBadge = (score: number) => {
     if (score >= 0.7) return <Badge className="bg-red-500">High</Badge>;
     if (score >= 0.5) return <Badge className="bg-orange-500">Medium</Badge>;

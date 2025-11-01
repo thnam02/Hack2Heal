@@ -19,8 +19,9 @@ const Register: React.FC = () => {
     try {
       await register({ name, email, password });
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+    } catch (err: unknown) {
+      const errorMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(errorMessage || 'Registration failed. Please try again.');
     } finally {
       setIsLoading(false);
     }

@@ -1,3 +1,4 @@
+import React from 'react';
 import { 
   LayoutDashboard, 
   Video, 
@@ -66,24 +67,22 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
   const navItems = userRole === 'patient' ? patientNavItems : clinicianNavItems;
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-white/80 backdrop-blur-sm border-r border-gray-200 p-6 flex flex-col">
-      {/* Logo */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#2C2E6F] to-[#4DD2C1] rounded-xl flex items-center justify-center">
-            <Activity className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h3 className="text-[#2C2E6F]">RehabQuest AI+</h3>
-          </div>
-        </div>
-        <p className="text-sm text-gray-500 pl-[52px]">
-          {userRole === 'patient' ? 'Your Recovery Journey' : 'Clinic Portal'}
-        </p>
+    <aside 
+      className="fixed left-0 top-0 h-screen w-64 text-white flex flex-col"
+      style={{
+        background: 'linear-gradient(to bottom, #6F66FF, #8C7BFF)',
+        backgroundColor: '#6F66FF',
+        backgroundImage: 'linear-gradient(to bottom, #6F66FF, #8C7BFF)',
+        zIndex: 50,
+      } as React.CSSProperties}
+    >
+      <div className="p-6">
+        <h1 className="text-xl">RehabQuest AI+</h1>
+        <p className="text-sm opacity-80 mt-1">{userRole === 'patient' ? 'Smart Recovery' : 'Clinic Portal'}</p>
       </div>
 
       {/* Navigation Items */}
-      <nav className="flex-1 space-y-1">
+      <nav className="flex-1 px-3">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -93,38 +92,36 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
               key={item.id}
               onClick={() => onPageChange(item.id)}
               className={cn(
-                'w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all',
+                'w-full flex items-center gap-3 px-4 py-3 rounded-lg mb-1 transition-all',
                 isActive
-                  ? 'bg-[#2C2E6F] text-white shadow-lg shadow-[#2C2E6F]/20'
-                  : 'text-gray-600 hover:bg-[#E9E6F9] hover:text-[#2C2E6F]'
+                  ? 'bg-white/20 shadow-lg'
+                  : 'hover:bg-white/10'
               )}
             >
-              <Icon className="w-5 h-5" />
-              <span>{item.label}</span>
+              <Icon size={20} />
+              <span className="text-sm">{item.label}</span>
             </button>
           );
         })}
       </nav>
 
-      {/* User Info */}
-      <div className="pt-4 border-t border-gray-200 space-y-2">
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#E9E6F9]">
-          <div className="w-10 h-10 bg-gradient-to-br from-[#4DD2C1] to-[#2C2E6F] rounded-full flex items-center justify-center text-white font-semibold">
+      {/* User Card */}
+      <div className="p-4 border-t border-white/20">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
             {getUserInitial()}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-[#2C2E6F] truncate font-medium">
-              {getUserDisplayName()}
-            </p>
-            <p className="text-xs text-gray-500">
-              {user?.email || (userRole === 'patient' ? 'Patient' : 'Clinician')}
+          <div>
+            <p className="text-sm">{getUserDisplayName()}</p>
+            <p className="text-xs opacity-70">
+              {userRole === 'patient' ? (user?.email || 'Patient') : (user?.email || 'Clinician')}
             </p>
           </div>
         </div>
         <Button
           variant="outline"
           onClick={handleLogout}
-          className="w-full border-gray-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+          className="w-full text-xs bg-white/10 hover:bg-white/20 rounded-lg px-3 py-2 transition-colors border-white/20 text-white"
         >
           <LogOut className="w-4 h-4 mr-2" />
           Logout

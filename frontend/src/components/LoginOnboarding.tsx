@@ -49,7 +49,7 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
           setIsLoading(false);
           return;
         }
-        await authRegister({ name, email, password });
+        await authRegister({ name, email, password, role });
       } else {
         await authLogin({ email, password });
       }
@@ -60,8 +60,9 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
       } else {
         handleBaselineComplete();
       }
-    } catch (err: any) {
-      setError(err.response?.data?.message || `${isSignUp ? 'Registration' : 'Login'} failed. Please try again.`);
+    } catch (err: unknown) {
+      const errorMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setError(errorMessage || `${isSignUp ? 'Registration' : 'Login'} failed. Please try again.`);
     } finally {
       setIsLoading(false);
     }

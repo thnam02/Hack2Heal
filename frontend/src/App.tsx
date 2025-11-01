@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { LoginOnboarding } from './components/LoginOnboarding';
 import { Navigation } from './components/Navigation';
 import { PatientDashboard } from './components/PatientDashboard';
+import Dashboard from './components/Dashboard';
 import { AIPlanReader } from './components/AIPlanReader';
 import { LiveSession } from './components/LiveSession';
 import { QuestsGamification } from './components/QuestsGamification';
@@ -17,7 +18,7 @@ import { PatientManagement } from './components/PatientManagement';
 import { AnalyticsPrediction } from './components/AnalyticsPrediction';
 
 function AppContent() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [userRole, setUserRole] = useState<'patient' | 'clinician'>('patient');
   const [currentPage, setCurrentPage] = useState('dashboard');
   const navigate = useNavigate();
@@ -29,15 +30,25 @@ function AppContent() {
     setCurrentPage(path);
   }, [location]);
 
-  // Determine role from user (you can extend your user model to include role)
+  // Determine role from user
   useEffect(() => {
     if (user) {
-      // Assuming role is stored in user object or default to patient
-      // You can modify this based on your actual user model
-      const role = (user as any).role === 'clinician' ? 'clinician' : 'patient';
+      // Map backend roles to frontend roles
+      // Backend uses: 'clinician', 'patient', or 'user' (default)
+      // Frontend uses: 'clinician' or 'patient'
+      const backendRole = (user as { role?: string })?.role;
+      const role = backendRole === 'clinician' ? 'clinician' : 'patient';
       setUserRole(role);
+      
+      // Navigate to correct dashboard based on role when on root dashboard
+      const path = location.pathname.replace('/', '') || 'dashboard';
+      if (path === 'dashboard' && backendRole === 'clinician') {
+        navigate('/clinician-dashboard');
+      } else if (path === 'clinician-dashboard' && role === 'patient') {
+        navigate('/dashboard');
+      }
     }
-  }, [user]);
+  }, [user, location.pathname, navigate]);
 
   const handleLogin = (role: 'patient' | 'clinician') => {
     setUserRole(role);
@@ -60,7 +71,7 @@ function AppContent() {
     if (userRole === 'patient') {
       switch (currentPage) {
         case 'dashboard':
-          return <PatientDashboard />;
+          return <Dashboard />;
         case 'ai-plan':
           return <AIPlanReader />;
         case 'live-session':
@@ -76,7 +87,7 @@ function AppContent() {
         case 'settings':
           return <Settings />;
         default:
-          return <PatientDashboard />;
+          return <Dashboard />;
       }
     }
     

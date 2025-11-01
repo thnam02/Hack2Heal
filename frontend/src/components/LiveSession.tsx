@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Square, RefreshCcw, Video, VideoOff } from 'lucide-react';
+import { Play, Square, RefreshCcw, Video, VideoOff, ArrowLeft, Trophy, CheckCircle, AlertCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config/constants';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -22,6 +22,20 @@ const EXERCISE_OPTIONS = [
 type Metrics = typeof DEFAULT_METRICS;
 type ExerciseOption = (typeof EXERCISE_OPTIONS)[number]['value'];
 
+interface ExerciseFromLibrary {
+  id: string;
+  name: string;
+  sets: string;
+  reps: string;
+  difficulty: string;
+  description: string;
+  tags: string[];
+  instructions: string[];
+  progress: number;
+  completedSessions: number;
+  totalSessions: number;
+}
+
 type StatusEvent = {
   message?: string;
   level?: 'error' | 'info';
@@ -40,18 +54,50 @@ const toNumber = (value: unknown, fallback = 0) => {
 };
 
 export function LiveSession() {
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState<Metrics>({ ...DEFAULT_METRICS });
-  const [exercise, setExercise] = useState<ExerciseOption>('shoulder_rotation');
-  const [statusMessage, setStatusMessage] = useState('');
+  const [exerciseOption, setExerciseOption] = useState<ExerciseOption>('shoulder_rotation');
+  const [selectedExercise, setSelectedExercise] = useState<ExerciseFromLibrary | null>(null);
+  // Status message removed - using enhanced UI feedback instead
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [isPreviewActive, setIsPreviewActive] = useState(false);
   const [devices, setDevices] = useState<VideoDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [selectedCameraIndex, setSelectedCameraIndex] = useState<string>('0');
+  
+  // Rep/Set tracking state (for exercise library mode)
+  const [currentSet, setCurrentSet] = useState(1);
+  const [currentRep, setCurrentRep] = useState(0);
+  const [sessionComplete, setSessionComplete] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
+
+  // Check for exercise from ExerciseLibrary on mount
+  useEffect(() => {
+    const stored = sessionStorage.getItem('selectedExercise');
+    console.log('LiveSession: Checking for exercise from sessionStorage:', stored);
+    if (stored) {
+      try {
+        const exercise = JSON.parse(stored) as ExerciseFromLibrary;
+        console.log('LiveSession: Found exercise:', exercise);
+        setSelectedExercise(exercise);
+        // Map exercise name to backend exercise type
+        if (exercise.name.toLowerCase().includes('shoulder')) {
+          setExerciseOption('shoulder_rotation');
+        } else if (exercise.name.toLowerCase().includes('squat')) {
+          setExerciseOption('squat');
+        }
+        sessionStorage.removeItem('selectedExercise'); // Clear after use
+      } catch (error) {
+        console.error('Failed to parse stored exercise:', error);
+      }
+    } else {
+      console.log('LiveSession: No exercise found in sessionStorage - showing standalone mode');
+    }
+  }, []);
 
   const handleMetricsPayload = useCallback((payload: Record<string, unknown>) => {
     console.log('Live metrics payload:', payload);
@@ -67,12 +113,12 @@ export function LiveSession() {
     refreshDevices();
   }, []);
 
-
   useEffect(() => {
     return () => {
       eventSourceRef.current?.close();
       stopPreview();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -93,6 +139,16 @@ export function LiveSession() {
     }
   }, [previewStream]);
 
+  // Reset rep/set tracking when exercise changes
+  useEffect(() => {
+    if (selectedExercise) {
+      setCurrentSet(1);
+      setCurrentRep(0);
+      setSessionComplete(false);
+      setShowCelebration(false);
+    }
+  }, [selectedExercise]);
+
   const refreshDevices = async () => {
     try {
       const devicesList = await navigator.mediaDevices.enumerateDevices();
@@ -111,13 +167,13 @@ export function LiveSession() {
       }
     } catch (error) {
       console.error('Failed to enumerate devices', error);
-      setStatusMessage('Unable to access cameras. Check permissions.');
+      console.error('Unable to access cameras. Check permissions.');
     }
   };
 
   const startPreview = async () => {
     if (!selectedDeviceId) {
-      setStatusMessage('Select a camera before starting the preview.');
+      console.warn('Select a camera before starting the preview.');
       return;
     }
 
@@ -128,10 +184,10 @@ export function LiveSession() {
       });
       setPreviewStream(stream);
       setIsPreviewActive(true);
-      setStatusMessage('Preview running. When ready, click Start Analysis.');
+      // Preview running
     } catch (error) {
       console.error('Unable to start preview', error);
-      setStatusMessage('Preview failed. Make sure the camera is not in use by another app.');
+      console.error('Preview failed. Make sure the camera is not in use by another app.');
     }
   };
 
@@ -147,26 +203,38 @@ export function LiveSession() {
   };
 
   const startSession = () => {
+    // Validation
+    if (!selectedCameraIndex && !selectedDeviceId) {
+      console.warn('Please select a camera before starting analysis.');
+      return;
+    }
+
+    if (!exerciseOption) {
+      console.warn('Please select an exercise before starting analysis.');
+      return;
+    }
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
 
+    console.log('Connecting to analysis service...');
     const url = new URL(`${API_BASE_URL}/sessions/start`);
-    url.searchParams.set('exercise', exercise);
-    url.searchParams.set('camera', selectedCameraIndex);
+    url.searchParams.set('exercise', exerciseOption);
+    url.searchParams.set('camera', selectedCameraIndex || '0');
 
     const source = new EventSource(url.toString());
 
     source.addEventListener('status', (event) => {
       const data = JSON.parse((event as MessageEvent<string>).data) as StatusEvent;
       if (data.level === 'error') {
-        setStatusMessage(`⚠️ ${data.message ?? 'Session error'}`);
+        console.error(`Session error: ${data.message ?? 'Session error'}`);
         setIsSessionActive(false);
         return;
       }
       if (data.message) {
-        setStatusMessage(data.message);
+        console.log('Status:', data.message);
       }
       if (data.code !== undefined) {
         setIsSessionActive(false);
@@ -185,15 +253,16 @@ export function LiveSession() {
         return;
       }
       if (data.message) {
-        setStatusMessage(data.message);
+        console.log('Status:', data.message);
       }
     };
 
     source.addEventListener('message', (event) => handleGenericEvent(event as MessageEvent<string>));
     source.onmessage = handleGenericEvent;
 
-    source.onerror = () => {
-      setStatusMessage('Connection lost. Please restart the session.');
+    source.onerror = (error) => {
+      console.error('EventSource error:', error);
+      console.error('Connection failed. Check if backend is running and Python script exists.');
       setIsSessionActive(false);
       source.close();
       eventSourceRef.current = null;
@@ -210,7 +279,38 @@ export function LiveSession() {
       eventSourceRef.current = null;
     }
     setIsSessionActive(false);
-    setStatusMessage('Session ended.');
+    console.log('Session ended.');
+  };
+
+  const handleRepComplete = () => {
+    // Will use currentExercise (defined below)
+
+    if (currentRep < totalReps) {
+      setCurrentRep(currentRep + 1);
+    }
+    
+    if (currentRep + 1 >= totalReps) {
+      // Set complete
+      setTimeout(() => {
+        if (currentSet < totalSets) {
+          setCurrentSet(currentSet + 1);
+          setCurrentRep(0);
+        } else {
+          // All sets complete
+          setSessionComplete(true);
+          setShowCelebration(true);
+          endSession();
+        }
+      }, 1500);
+    }
+  };
+
+  const handleEndSession = () => {
+    if (selectedExercise) {
+      setSessionComplete(true);
+      setShowCelebration(true);
+    }
+    endSession();
   };
 
   const deviceOptions = useMemo(() => {
@@ -221,36 +321,177 @@ export function LiveSession() {
     }));
   }, [devices]);
 
+  // Default exercise if none selected - use first exercise from library
+  const defaultExercise: ExerciseFromLibrary = {
+    id: 'ex-default',
+    name: 'Shoulder Rotation',
+    sets: '3',
+    reps: '10',
+    difficulty: 'Intermediate',
+    description: 'Improve shoulder range of motion and rotator cuff strength',
+    tags: ['Shoulder', 'Mobility'],
+    instructions: [
+      'Stand with feet shoulder-width apart, arms at your sides',
+      'Raise your arms to shoulder height, keeping elbows bent at 90°',
+      'Slowly rotate your shoulders forward, then backward',
+      'Maintain controlled movement throughout the exercise'
+    ],
+    progress: 0,
+    completedSessions: 0,
+    totalSessions: 3,
+  };
+
+  // Ensure we always have an exercise with instructions
+  const exerciseSource = selectedExercise || defaultExercise;
+  const currentExercise = {
+    ...exerciseSource,
+    instructions: exerciseSource.instructions && Array.isArray(exerciseSource.instructions) && exerciseSource.instructions.length > 0
+      ? exerciseSource.instructions
+      : defaultExercise.instructions,
+    tags: exerciseSource.tags && Array.isArray(exerciseSource.tags) && exerciseSource.tags.length > 0
+      ? exerciseSource.tags
+      : defaultExercise.tags,
+  };
+  const totalSets = parseInt(currentExercise.sets) || 3;
+  const totalReps = parseInt(currentExercise.reps) || 10;
+  const progressPercent = ((currentSet - 1) / totalSets) * 100 + (currentRep / totalReps / totalSets) * 100;
+
+  // Always show enhanced UI (unified experience)
+  console.log('LiveSession: Rendering unified enhanced UI with exercise:', currentExercise.name);
+  console.log('LiveSession: Instructions:', currentExercise.instructions);
+  console.log('LiveSession: Instructions length:', currentExercise.instructions?.length);
+  console.log('LiveSession: Tags:', currentExercise.tags);
   return (
-    <div className="space-y-6 max-w-7xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[#2C2E6F] mb-2">Live Exercise Session</h1>
-          <p className="text-gray-600">Use your OBS Virtual Camera (or other webcam) for live pose analysis.</p>
+      <div className="p-8">
+        {/* Header */}
+        <div className="mb-8">
+          {selectedExercise ? (
+            <Button variant="ghost" onClick={() => navigate('/exercises')} className="mb-4 hover:bg-[#6F66FF]/10">
+              <ArrowLeft className="mr-2" size={18} />
+              Back to Library
+            </Button>
+          ) : (
+            <Button variant="ghost" onClick={() => navigate('/exercises')} className="mb-4 hover:bg-[#6F66FF]/10">
+              <ArrowLeft className="mr-2" size={18} />
+              Browse Exercise Library
+            </Button>
+          )}
+          <h1 className="text-3xl mb-2 text-[#2C2E6F]">Live Exercise Monitor</h1>
+          <p className="text-[#1B1E3D]/60">Let's practice your <span className="text-[#6F66FF]">{currentExercise.name}</span> together!</p>
+          {!selectedExercise && (
+            <p className="text-xs text-gray-500 mt-2">
+              💡 Currently showing default exercise. Go to <strong>Exercise Library</strong> to select a specific exercise.
+            </p>
+          )}
         </div>
-        <Badge className="bg-gradient-to-r from-[#2C2E6F] to-[#4DD2C1] text-white px-4 py-2">
-          OBS Workflow
-        </Badge>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 border-0 shadow-xl">
-          <CardContent className="p-6 space-y-4">
-            <div className="relative bg-slate-900 rounded-2xl overflow-hidden aspect-video flex items-center justify-center text-slate-300">
-              {isPreviewActive && previewStream ? (
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-              ) : (
-                <div className="text-center space-y-3">
-                  <VideoOff className="w-12 h-12 mx-auto text-[#4DD2C1]" />
-                  <p className="text-lg">Start the preview to verify your OBS feed.</p>
-                  <p className="text-sm text-slate-400">Select the virtual camera and click “Start Preview”.</p>
+        {/* Celebration Overlay */}
+        {showCelebration && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <Card className="rounded-2xl shadow-2xl max-w-md mx-4 border-2 border-[#3ECF8E]">
+              <CardContent className="pt-8 pb-8 text-center">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#3ECF8E] to-[#6F66FF] mx-auto mb-6 flex items-center justify-center animate-bounce">
+                  <Trophy className="text-white" size={40} />
                 </div>
-              )}
-            </div>
+                <h2 className="text-2xl mb-3">Great job! 🎉</h2>
+                <p className="text-[#1B1E3D]/70 mb-2">You completed all {totalSets} sets!</p>
+                <p className="text-sm text-[#1B1E3D]/60 mb-6">
+                  Your form was excellent. Keep up the amazing work!
+                </p>
+                
+                <div className="bg-[#6F66FF]/10 rounded-xl p-4 mb-6">
+                  <p className="text-sm text-[#1B1E3D]/60 mb-2">XP Earned</p>
+                  <p className="text-3xl text-[#6F66FF]">+20 XP</p>
+                  <p className="text-xs text-[#1B1E3D]/60 mt-1">Perfect Form ×3 Quest Progress: 3/3 ✓</p>
+                </div>
 
-            <div className="grid gap-4 md:grid-cols-3 md:items-center bg-[#E9E6F9] rounded-xl p-4">
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Camera</p>
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => {
+                      setShowCelebration(false);
+                      setCurrentSet(1);
+                      setCurrentRep(0);
+                      setSessionComplete(false);
+                    }}
+                    variant="outline"
+                    className="flex-1 rounded-xl"
+                  >
+                    Practice Again
+                  </Button>
+                  <Button
+                    onClick={() => navigate('/exercises')}
+                    className="flex-1 bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF] hover:opacity-90 rounded-xl"
+                  >
+                    Back to Library
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Left Panel - Video Feed */}
+          <Card className="rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-[#2C2E6F]">
+                <Video className="text-[#6F66FF]" />
+                Camera Feed
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="relative bg-[#1B1E3D] rounded-xl overflow-hidden aspect-video flex items-center justify-center">
+                {!isPreviewActive ? (
+                  <div className="text-center">
+                    <VideoOff className="text-white/30 mx-auto mb-4" size={64} />
+                    <p className="text-white/60 mb-4">Camera is off</p>
+                    <Button
+                      onClick={startPreview}
+                      className="bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF] hover:opacity-90"
+                    >
+                      Start Camera
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {previewStream && (
+                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                    )}
+                    
+                  {/* Real-time Feedback Bubble */}
+                  <div className="absolute top-4 left-4 right-4 bg-white backdrop-blur rounded-xl p-4 shadow-lg z-10">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="text-[#3ECF8E] flex-shrink-0 mt-0.5" size={20} />
+                      <p className="text-sm text-[#1B1E3D]">
+                        {currentRep === 0 && "Ready to start? Let's go!"}
+                        {currentRep > 0 && currentRep < totalReps && "Perfect posture — keep going!"}
+                        {currentRep === totalReps && currentSet < totalSets && "Great set! Rest 10s before next set."}
+                      </p>
+                    </div>
+                  </div>
+
+                    {/* Progress Bar */}
+                    <div className="absolute bottom-4 left-4 right-4 bg-white backdrop-blur rounded-xl p-3 z-10">
+                      <div className="flex items-center justify-between text-sm mb-2">
+                        <span className="text-[#1B1E3D]">Set {currentSet} of {totalSets} — Reps: {currentRep}/{totalReps}</span>
+                        <span className="text-[#6F66FF]">{Math.round(progressPercent)}%</span>
+                      </div>
+                      <Progress value={progressPercent} className="h-2" />
+                    </div>
+
+                    {/* Camera Active Indicator */}
+                    <div className="absolute top-4 right-4 z-10">
+                      <div className="bg-red-500 rounded-full px-3 py-1 flex items-center gap-2">
+                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                        <span className="text-white text-sm">Recording</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Camera Controls */}
+              <div className="grid gap-4 md:grid-cols-2 mt-4">
                 <Select
                   value={selectedDeviceId}
                   onValueChange={(value) => {
@@ -272,109 +513,147 @@ export function LiveSession() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
 
-              <div className="space-y-2">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Exercise</p>
-                <Select value={exercise} onValueChange={(value) => setExercise(value as ExerciseOption)}>
-                  <SelectTrigger className="w-full bg-white">
-                    <SelectValue placeholder="Select exercise" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXERCISE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2 text-sm text-gray-600">
-                <p className="font-medium text-[#2C2E6F]">Quick Steps</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Open OBS Camera on your phone.</li>
-                  <li>Choose “OBS Virtual Camera” above & start preview.</li>
-                  <li>Click “Start Analysis” to stream metrics from Python.</li>
-                </ol>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <Button variant="secondary" onClick={refreshDevices} className="h-12">
-                <RefreshCcw className="w-4 h-4 mr-2" /> Refresh Cameras
-              </Button>
-              <Button onClick={isPreviewActive ? stopPreview : startPreview} className="h-12">
-                {isPreviewActive ? (
-                  <>
-                    <VideoOff className="w-4 h-4 mr-2" /> Stop Preview
-                  </>
-                ) : (
-                  <>
-                    <Video className="w-4 h-4 mr-2" /> Start Preview
-                  </>
-                )}
-              </Button>
-              {!isSessionActive ? (
-                <Button onClick={startSession} className="flex-1 bg-gradient-to-r from-[#4DD2C1] to-[#3bc1b0] h-12">
-                  <Play className="w-5 h-5 mr-2" /> Start Analysis
-                </Button>
-              ) : (
-                <Button onClick={endSession} variant="destructive" className="flex-1 h-12 bg-[#FF8A73]">
-                  <Square className="w-5 h-5 mr-2" /> End Analysis
-                </Button>
-              )}
-            </div>
-
-            {statusMessage && (
-              <div className="text-sm text-gray-500 bg-white border border-dashed border-[#4DD2C1]/40 rounded-lg p-3">
-                {statusMessage}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-xl h-fit">
-          <CardHeader>
-            <CardTitle className="text-[#2C2E6F]">Real-Time Metrics</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">Posture Score</p>
-                  <p className="text-3xl font-semibold text-[#2C2E6F]">{Math.round(metrics.postureScore)}%</p>
+                <div className="flex gap-2">
+                  <Button onClick={isPreviewActive ? stopPreview : startPreview} variant="outline" className="flex-1">
+                    {isPreviewActive ? <VideoOff className="w-4 h-4 mr-2" /> : <Video className="w-4 h-4 mr-2" />}
+                    {isPreviewActive ? 'Stop Preview' : 'Start Preview'}
+                  </Button>
+                  <Button variant="secondary" onClick={refreshDevices}>
+                    <RefreshCcw className="w-4 h-4" />
+                  </Button>
                 </div>
-                <Progress value={Math.min(100, Math.max(0, metrics.postureScore))} className="h-2" />
               </div>
 
-              <div>
-                <p className="text-sm text-gray-500">Alignment</p>
-                <p className="text-lg text-[#4DD2C1]">{metrics.alignment}</p>
-              </div>
+              {isPreviewActive && !sessionComplete && (
+                <div className="flex gap-3 mt-4">
+                  <Button
+                    onClick={handleRepComplete}
+                    className="flex-1 bg-gradient-to-r from-[#3ECF8E] to-[#3ECF8E]/80 hover:opacity-90"
+                    disabled={currentRep >= totalReps}
+                  >
+                    {currentRep >= totalReps ? 'Set Complete ✓' : 'Rep Complete'}
+                  </Button>
+                  {!isSessionActive ? (
+                    <Button onClick={startSession} className="flex-1 bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF]">
+                      <Play className="w-4 h-4 mr-2" /> Start Analysis
+                    </Button>
+                  ) : (
+                    <Button onClick={handleEndSession} variant="outline" className="rounded-xl">
+                      End Session
+                    </Button>
+                  )}
+                </div>
+              )}
 
-              <div>
-                <p className="text-sm text-gray-500">Range of Motion</p>
-                <p className="text-lg text-[#2C2E6F]">{Math.round(metrics.rangeOfMotion)}°</p>
-              </div>
+              {isSessionActive && (
+                <div className="mt-4">
+                  <Button onClick={endSession} variant="destructive" className="w-full">
+                    <Square className="w-4 h-4 mr-2" /> Stop Analysis
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-              <div>
-                <p className="text-sm text-gray-500">Form Quality</p>
-                <p className="text-lg font-medium text-[#FF8A73]">{metrics.formQuality}</p>
-              </div>
-            </div>
+          {/* Right Panel - Analysis & Instructions */}
+          <div className="space-y-6">
+            {/* Posture Analysis */}
+            <Card className="rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+              <CardHeader>
+                <CardTitle className="text-[#2C2E6F]">Posture Analysis</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-[#1B1E3D]/60">Posture Score</span>
+                    <span className="text-xl text-[#6F66FF]">{isSessionActive ? `${Math.round(metrics.postureScore)}%` : '--'}</span>
+                  </div>
+                  <Progress value={isSessionActive ? metrics.postureScore : 0} className="h-2" />
+                </div>
 
-            <div className="pt-4 border-t border-dashed border-[#E9E6F9] space-y-2">
-              <h4 className="text-sm text-gray-500 uppercase tracking-wide">Tips</h4>
-              <ul className="space-y-2 text-sm text-gray-600">
-                <li>• Keep the OBS virtual camera active while analysing.</li>
-                <li>• If metrics stay at 0, ensure the correct cv2 index is chosen.</li>
-                <li>• Refresh cameras if you plug/unplug devices.</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className={`${isSessionActive && metrics.alignment === 'Correct' ? 'bg-[#3ECF8E]/10 border-[#3ECF8E]/30' : 'bg-[#F9F9FB] border-[#E5E7EB]'} border rounded-xl p-3`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle className={`${isSessionActive && metrics.alignment === 'Correct' ? 'text-[#3ECF8E]' : 'text-[#1B1E3D]/40'}`} size={16} />
+                      <span className="text-sm">Alignment</span>
+                    </div>
+                    <p className={`text-xs ${isSessionActive && metrics.alignment === 'Correct' ? 'text-[#3ECF8E] font-medium' : 'text-[#1B1E3D]/60'}`}>
+                      {isSessionActive ? metrics.alignment : 'Start camera'}
+                    </p>
+                  </div>
+
+                  <div className={`${isSessionActive ? 'bg-red-50 border-red-200' : 'bg-[#F9F9FB] border-[#E5E7EB]'} border rounded-xl p-3`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertCircle className={`${isSessionActive ? 'text-red-500' : 'text-[#1B1E3D]/40'}`} size={16} />
+                      <span className="text-sm">Range of Motion</span>
+                    </div>
+                    <p className={`text-xs ${isSessionActive ? 'text-red-600 font-medium' : 'text-[#1B1E3D]/60'}`}>
+                      {isSessionActive ? `${Math.round(metrics.rangeOfMotion)}°` : '--'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`${isSessionActive ? 'bg-[#3ECF8E]/10 border-[#3ECF8E]/30' : 'bg-[#F9F9FB] border-[#E5E7EB]'} border rounded-xl p-3`}>
+                  <p className="text-sm text-[#1B1E3D]">
+                    <span className={isSessionActive ? 'text-[#3ECF8E] font-medium' : 'text-[#1B1E3D]/60'}>Form Quality:</span>{' '}
+                    <span className={isSessionActive ? 'text-[#3ECF8E]' : 'text-[#1B1E3D]/60'}>
+                      {isSessionActive ? metrics.formQuality : 'Waiting...'}
+                    </span>
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Exercise Instructions */}
+            <Card className="rounded-2xl shadow-[0_2px_8px_rgba(0,0,0,0.05)]">
+              <CardHeader>
+                <CardTitle className="text-[#2C2E6F]">Exercise Instructions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <h3 className="text-xl mb-2 text-[#6F66FF]">{currentExercise.name}</h3>
+                <p className="text-sm text-[#1B1E3D]/60 mb-4">{currentExercise.sets} sets × {currentExercise.reps} reps</p>
+
+                <div className="space-y-3">
+                  {currentExercise.instructions.map((instruction, index) => (
+                    <div key={index} className="flex gap-3 items-start">
+                      <div 
+                        className="w-6 h-6 rounded-full text-white flex items-center justify-center flex-shrink-0 text-sm font-semibold" 
+                        style={{ backgroundColor: '#6F66FF', color: '#FFFFFF' }}
+                      >
+                        {index + 1}
+                      </div>
+                      <p className="text-sm text-[#1B1E3D]/70 flex-1 leading-relaxed">
+                        {instruction}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Exercise Tags */}
+                {currentExercise.tags && currentExercise.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-[#1B1E3D]/10">
+                    {currentExercise.tags.map((tag, index) => (
+                      <span
+                        key={index}
+                        className="text-xs px-3 py-1 bg-[#6F66FF]/10 text-[#6F66FF] rounded-full"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-8 text-center text-sm text-[#1B1E3D]/60">
+          <p>
+            All movements analyzed on-device for privacy. Powered by <span className="text-[#6F66FF]">RehabQuest AI+ Vision Coach</span>.
+          </p>
+        </div>
       </div>
-    </div>
-  );
+    );
 }

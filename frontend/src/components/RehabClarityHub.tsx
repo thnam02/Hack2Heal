@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { 
   Search, 
   Volume2, 
@@ -29,7 +28,6 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { Separator } from './ui/separator';
-import { Progress } from './ui/progress';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const glossaryTerms = [

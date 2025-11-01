@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Badge } from './ui/badge';
-import { Search, Filter, Mail, Phone, Calendar, TrendingUp, FileText } from 'lucide-react';
+import { Search, Mail, Phone, Calendar, TrendingUp, FileText } from 'lucide-react';
 import {
   Select,
   SelectContent,
