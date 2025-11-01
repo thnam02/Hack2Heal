@@ -131,9 +131,8 @@ async function updateById(id, updateBody) {
     password: updateBody.password !== undefined ? await bcrypt.hash(updateBody.password, 8) : user.password,
   };
 
-  db
-    .prepare(
-      `UPDATE users SET
+  db.prepare(
+    `UPDATE users SET
         name = @name,
         email = @email,
         password = @password,
@@ -141,8 +140,7 @@ async function updateById(id, updateBody) {
         isEmailVerified = @isEmailVerified,
         updatedAt = @updatedAt
       WHERE id = @id`
-    )
-    .run({ ...next, updatedAt: now, id });
+  ).run({ ...next, updatedAt: now, id });
 
   return findById(id);
 }

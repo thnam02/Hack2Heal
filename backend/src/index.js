@@ -1,16 +1,16 @@
+let server;
+
 const app = require('./app');
 const config = require('./config/config');
 const logger = require('./config/logger');
-
-let server;
-
-startServer();
 
 function startServer() {
   server = app.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
   });
 }
+
+startServer();
 
 const exitHandler = () => {
   if (server) {

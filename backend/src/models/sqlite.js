@@ -1,16 +1,5 @@
 const path = require('path');
-
-const Database = (() => {
-  try {
-    // better-sqlite3 is a native dependency; ensure it is installed
-    // before attempting to access the database.
-    return require('better-sqlite3');
-  } catch (error) {
-    throw new Error(
-      'better-sqlite3 is not installed. Run "npm install better-sqlite3" inside backend/ and rebuild any images.'
-    );
-  }
-})();
+const Database = require('better-sqlite3');
 
 let instance;
 
