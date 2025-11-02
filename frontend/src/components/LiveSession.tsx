@@ -68,9 +68,8 @@ export function LiveSession() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [selectedCameraIndex, setSelectedCameraIndex] = useState<string>('0');
   
-  // Rep/Set tracking state (for exercise library mode)
-  const [currentSet, setCurrentSet] = useState(1);
-  const [currentRep, setCurrentRep] = useState(0);
+  // Set tracking state (for exercise library mode)
+  const [currentSet, setCurrentSet] = useState(0); // Start at 0, first click = Set 1
   const [sessionComplete, setSessionComplete] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
 
@@ -167,15 +166,14 @@ export function LiveSession() {
     }
   }, [previewStream]);
 
-  // Reset rep/set tracking only when exercise ID changes (not when exercise data is updated)
+  // Reset set tracking only when exercise ID changes (not when exercise data is updated)
   const prevExerciseIdRef = useRef<string | null>(null);
   useEffect(() => {
     const currentExerciseId = selectedExercise?.id || null;
     // Only reset if the exercise ID actually changed (new exercise selected)
     // Don't reset if we're just updating the exercise data after completion
     if (currentExerciseId && currentExerciseId !== prevExerciseIdRef.current) {
-      setCurrentSet(1);
-      setCurrentRep(0);
+      setCurrentSet(0); // Start at 0, first click = Set 1
       setSessionComplete(false);
       setShowCelebration(false);
       prevExerciseIdRef.current = currentExerciseId;
@@ -337,98 +335,77 @@ export function LiveSession() {
         ? exerciseSource.tags
         : defaultExercise.tags,
     };
-  }, [selectedExercise]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExercise]); // defaultExercise is a constant, no need to include
 
-  // Calculate sets and reps from current exercise
+  // Calculate sets from current exercise
   const totalSets = useMemo(() => parseInt(currentExercise.sets) || 3, [currentExercise.sets]);
-  const totalReps = useMemo(() => parseInt(currentExercise.reps) || 10, [currentExercise.reps]);
 
-  const handleRepComplete = useCallback(() => {
-    // Calculate the new rep count
-    const newRep = currentRep + 1;
+  const handleSetComplete = useCallback(() => {
+    // Calculate the new set count (currentSet starts at 0, so first click = Set 1)
+    const newSet = currentSet + 1;
     
-    // Check if this rep completes the current set
-    if (newRep >= totalReps) {
-      // Set complete - move to next set or finish
+    // Check if this completes all sets
+    if (newSet >= totalSets) {
+      // All sets complete!
+      // Set completion flags IMMEDIATELY to prevent any resets
+      setCurrentSet(newSet);
+      setSessionComplete(true);
+      setShowCelebration(true);
       
-      // First update the rep count to show set complete
-      setCurrentRep(newRep);
+      // End the session
+      endSession();
       
-      // Check if this is the final set (use === for exact match)
-      if (currentSet === totalSets) {
-        // This is the final set - all sets complete!
-        // Set completion flags IMMEDIATELY to prevent any resets
-        setSessionComplete(true);
-        setShowCelebration(true);
-        
-        // End the session
-        endSession();
-        
-        // Complete session stats (+20 XP, increment session, update streak, quest progress)
-        completeSessionStats().catch(() => {});
-        
-        // Update exercise session count if exercise was selected from library
-        // Do this AFTER setting sessionComplete to prevent reset loops
-        if (selectedExercise?.id) {
-          try {
-            const updatedExercise = exerciseService.completeSession(selectedExercise.id);
-            if (updatedExercise) {
-              // Update the selectedExercise state with fresh data
-              // The useEffect won't reset because:
-              // 1. It only depends on selectedExercise?.id (not the whole object)
-              // 2. The ref (prevExerciseIdRef) tracks if the ID actually changed
-              // 3. Since the ID is the same, it won't trigger a reset
-              setSelectedExercise(updatedExercise);
+      // Complete session stats (+20 XP, increment session, update streak, quest progress)
+      completeSessionStats().catch(() => {});
+      
+      // Update exercise session count if exercise was selected from library
+      // Do this AFTER setting sessionComplete to prevent reset loops
+      if (selectedExercise?.id) {
+        try {
+          const updatedExercise = exerciseService.completeSession(selectedExercise.id);
+          if (updatedExercise) {
+            // Update the selectedExercise state with fresh data
+            // The useEffect won't reset because:
+            // 1. It only depends on selectedExercise?.id (not the whole object)
+            // 2. The ref (prevExerciseIdRef) tracks if the ID actually changed
+            // 3. Since the ID is the same, it won't trigger a reset
+            setSelectedExercise(updatedExercise);
+            
+            // Dispatch custom event to update ExerciseLibrary if open (for same tab)
+            // IMPORTANT: Use a longer delay to ensure ExerciseLibrary has time to set up listeners
+            // ExerciseLibrary might be unmounting/remounting during navigation
+            setTimeout(() => {
+              // Dispatch simple event (triggers ExerciseLibrary reload)
+              const event = new Event('exerciseProgressUpdated', { bubbles: true });
+              window.dispatchEvent(event);
               
-              // Dispatch custom event to update ExerciseLibrary if open (for same tab)
-              // IMPORTANT: Use a longer delay to ensure ExerciseLibrary has time to set up listeners
-              // ExerciseLibrary might be unmounting/remounting during navigation
+              // Also dispatch custom event with details
+              const detailEvent = new CustomEvent('exerciseProgressUpdated', {
+                detail: { exerciseId: updatedExercise.id, updatedExercise },
+                bubbles: true,
+              });
+              window.dispatchEvent(detailEvent);
+              
+              // Retry dispatch after a longer delay to catch ExerciseLibrary if it wasn't ready
               setTimeout(() => {
-                // Dispatch simple event (triggers ExerciseLibrary reload)
-                const event = new Event('exerciseProgressUpdated', { bubbles: true });
-                window.dispatchEvent(event);
-                
-                // Also dispatch custom event with details
-                const detailEvent = new CustomEvent('exerciseProgressUpdated', {
-                  detail: { exerciseId: updatedExercise.id, updatedExercise },
+                const retryEvent = new CustomEvent('exerciseProgressUpdated', {
+                  detail: { exerciseId: updatedExercise.id, updatedExercise, retry: true },
                   bubbles: true,
                 });
-                window.dispatchEvent(detailEvent);
-                
-                // Retry dispatch after a longer delay to catch ExerciseLibrary if it wasn't ready
-                setTimeout(() => {
-                  const retryEvent = new CustomEvent('exerciseProgressUpdated', {
-                    detail: { exerciseId: updatedExercise.id, updatedExercise, retry: true },
-                    bubbles: true,
-                  });
-                  window.dispatchEvent(retryEvent);
-                }, 300); // Retry after 300ms for late-mounted components
-              }, 250); // Initial delay: 250ms to ensure localStorage write + listener setup
-            }
-          } catch (error) {
-            // Ignore exercise session update errors
+                window.dispatchEvent(retryEvent);
+              }, 300); // Retry after 300ms for late-mounted components
+            }, 250); // Initial delay: 250ms to ensure localStorage write + listener setup
           }
+        } catch (error) {
+          // Ignore exercise session update errors
         }
-      } else {
-        // Move to next set after a delay
-        setTimeout(() => {
-          // Use functional update to get the latest state
-          setCurrentSet((prevSet) => {
-            if (prevSet < totalSets) {
-              const nextSet = prevSet + 1;
-              // Reset rep count for the next set
-              setCurrentRep(0);
-              return nextSet;
-            }
-            return prevSet; // Shouldn't reach here, but keep state consistent
-          });
-        }, 1500);
       }
     } else {
-      // Just increment the rep count
-      setCurrentRep(newRep);
+      // Move to next set
+      setCurrentSet(newSet);
     }
-  }, [currentRep, totalReps, currentSet, totalSets, currentExercise, selectedExercise, completeSessionStats]);
+  }, [currentSet, totalSets, selectedExercise, completeSessionStats]);
 
   const handleEndSession = () => {
     if (selectedExercise) {
@@ -446,10 +423,14 @@ export function LiveSession() {
     }));
   }, [devices]);
 
-  // Calculate progress percentage
+  // Calculate progress percentage (based on sets only)
   const progressPercent = useMemo(() => {
-    return ((currentSet - 1) / totalSets) * 100 + (currentRep / totalReps / totalSets) * 100;
-  }, [currentSet, currentRep, totalSets, totalReps]);
+    // currentSet starts at 0, so progress = currentSet / totalSets * 100
+    // Example: Set 1 of 3 = 1/3 * 100 = 33.33%
+    //          Set 2 of 3 = 2/3 * 100 = 66.67%
+    //          Set 3 of 3 = 3/3 * 100 = 100%
+    return (currentSet / totalSets) * 100;
+  }, [currentSet, totalSets]);
 
   // Always show enhanced UI (unified experience)
   return (
@@ -500,8 +481,7 @@ export function LiveSession() {
                   <Button
                     onClick={() => {
                       setShowCelebration(false);
-                      setCurrentSet(1);
-                      setCurrentRep(0);
+                      setCurrentSet(0);
                       setSessionComplete(false);
                     }}
                     variant="outline"
@@ -554,9 +534,9 @@ export function LiveSession() {
                     <div className="flex items-start gap-3">
                       <CheckCircle className="text-[#3ECF8E] flex-shrink-0 mt-0.5" size={20} />
                       <p className="text-sm text-[#1B1E3D]">
-                        {currentRep === 0 && "Ready to start? Let's go!"}
-                        {currentRep > 0 && currentRep < totalReps && "Perfect posture — keep going!"}
-                        {currentRep === totalReps && currentSet < totalSets && "Great set! Rest 10s before next set."}
+                        {currentSet === 0 && "Ready to start? Let's go!"}
+                        {currentSet > 0 && currentSet < totalSets && "Great set! Rest 10s before next set."}
+                        {currentSet === totalSets && "All sets complete! Amazing work!"}
                       </p>
                     </div>
                   </div>
@@ -564,7 +544,7 @@ export function LiveSession() {
                     {/* Progress Bar */}
                     <div className="absolute bottom-4 left-4 right-4 bg-white backdrop-blur rounded-xl p-3 z-10">
                       <div className="flex items-center justify-between text-sm mb-2">
-                        <span className="text-[#1B1E3D]">Set {currentSet} of {totalSets} — Reps: {currentRep}/{totalReps}</span>
+                        <span className="text-[#1B1E3D]">Set {currentSet > 0 ? currentSet : '0'} of {totalSets}</span>
                         <span className="text-[#6F66FF]">{Math.round(progressPercent)}%</span>
                       </div>
                       <Progress value={progressPercent} className="h-2" />
@@ -619,11 +599,11 @@ export function LiveSession() {
               {isPreviewActive && !sessionComplete && (
                 <div className="flex gap-3 mt-4">
                   <Button
-                    onClick={handleRepComplete}
+                    onClick={handleSetComplete}
                     className="flex-1 bg-gradient-to-r from-[#3ECF8E] to-[#3ECF8E]/80 hover:opacity-90"
-                    disabled={currentRep >= totalReps}
+                    disabled={currentSet >= totalSets}
                   >
-                    {currentRep >= totalReps ? 'Set Complete ✓' : 'Rep Complete'}
+                    {currentSet >= totalSets ? 'All Sets Complete ✓' : `Set ${currentSet > 0 ? currentSet + 1 : 1} Complete`}
                   </Button>
                   {!isSessionActive ? (
                     <Button onClick={startSession} className="flex-1 bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF]">

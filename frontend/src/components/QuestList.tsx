@@ -1,8 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Progress } from './ui/progress';
-import { CheckCircle2, Target, Trophy, Zap } from 'lucide-react';
+import { CheckCircle2, Target, Trophy } from 'lucide-react';
 import { Quest } from '../hooks/useQuestProgress';
 import { motion, AnimatePresence } from 'framer-motion';
 

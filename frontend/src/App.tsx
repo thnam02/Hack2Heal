@@ -86,6 +86,8 @@ function AppContent() {
           return <LiveSession />;
         case 'quests':
           return <QuestsGamification />;
+        case 'friends':
+          return <FriendsAndMessages />;
         case 'friends-messages':
           return <FriendsAndMessages />;
         case 'friend-requests':

@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authService, User, LoginRequest, RegisterRequest } from '../services/auth.service';
+import { socketService } from '../services/socket.service';
+import { messageService } from '../services/message.service';
 
 interface AuthContextType {
   user: User | null;
@@ -35,6 +37,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const currentUser = authService.getCurrentUser();
     if (currentUser && authService.isAuthenticated()) {
       setUser(currentUser);
+      // Connect socket if user is already logged in
+      socketService.connect();
     }
     setIsLoading(false);
   }, []);
@@ -42,14 +46,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (credentials: LoginRequest) => {
     const response = await authService.login(credentials);
     setUser(response.user);
+    // Connect socket after successful login
+    socketService.connect();
   };
 
   const register = async (userData: RegisterRequest) => {
     const response = await authService.register(userData);
     setUser(response.user);
+    // Connect socket after successful registration
+    socketService.connect();
   };
 
   const logout = async () => {
+    // Disconnect socket before logout
+    socketService.disconnect();
+    // Clear conversations cache when logging out
+    messageService.clearCache();
     await authService.logout();
     setUser(null);
   };

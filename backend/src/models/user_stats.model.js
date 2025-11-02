@@ -70,6 +70,7 @@ async function createOrUpdate(userId, statsData) {
     return findByUserId(userId);
   }
 
+  // eslint-disable-next-line no-unused-vars
   const info = db
     .prepare(
       `INSERT INTO user_stats (userId, totalXp, currentStreak, lastCompletedDate, sessionsCompleted, questProgress, createdAt, updatedAt)
@@ -99,19 +100,20 @@ async function addXp(userId, xpAmount) {
 async function incrementSession(userId) {
   const stats = await findByUserId(userId);
   const currentSessions = stats ? stats.sessionsCompleted : 0;
-  
+
   // Check if we should update streak
   const today = new Date().toISOString().split('T')[0];
   const lastCompleted = stats?.lastCompletedDate ? stats.lastCompletedDate.split('T')[0] : null;
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  
+
   let newStreak = stats ? stats.currentStreak : 0;
-  let lastCompletedDate = today;
-  
+  const lastCompletedDate = today;
+
   if (lastCompleted === today) {
     // Already completed today, don't increment streak or session
     return stats;
-  } else if (lastCompleted === yesterday) {
+  }
+  if (lastCompleted === yesterday) {
     // Consecutive day, increment streak
     newStreak += 1;
   } else if (lastCompleted && lastCompleted !== yesterday && lastCompleted !== today) {
@@ -121,11 +123,11 @@ async function incrementSession(userId) {
     // First time or no previous completion
     newStreak = 1;
   }
-  
+
   return createOrUpdate(userId, {
     sessionsCompleted: currentSessions + 1,
     currentStreak: newStreak,
-    lastCompletedDate: lastCompletedDate,
+    lastCompletedDate,
   });
 }
 
@@ -133,7 +135,7 @@ async function updateQuestProgress(userId, questId, progress, total) {
   const stats = await findByUserId(userId);
   const questProgress = stats?.questProgress || {};
   questProgress[questId] = { progress, total };
-  
+
   return createOrUpdate(userId, {
     questProgress,
   });
@@ -167,7 +169,7 @@ async function getLeaderboard(limit = 10) {
       sessionsCompleted: row.sessionsCompleted,
       level: Math.floor(row.totalXp / 150) + 1, // Level based on XP (150 XP per level)
     }));
-  
+
   return rows;
 }
 
@@ -179,4 +181,3 @@ module.exports = {
   updateQuestProgress,
   getLeaderboard,
 };
-

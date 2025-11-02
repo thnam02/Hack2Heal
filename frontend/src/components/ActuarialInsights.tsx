@@ -8,7 +8,6 @@ import {
   TrendingUp,
   AlertTriangle,
   Activity,
-  FileText,
   ArrowLeft,
   Download,
   Send,

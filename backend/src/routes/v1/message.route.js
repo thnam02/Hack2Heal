@@ -4,27 +4,32 @@ const { messageController } = require('../../controllers');
 
 const router = express.Router();
 
-router.use(auth);
+// Log all requests to message routes
+router.use((req, res, next) => {
+  // console.log(`📨 Message route: ${req.method} ${req.path} - Original URL: ${req.originalUrl}`);
+  next();
+});
 
-router
-  .route('/send')
-  .post(messageController.sendMessage);
+router.use((req, res, next) => {
+  // console.log(`🔍 Before route handlers: ${req.method} ${req.path}`);
+  next();
+});
 
-router
-  .route('/conversations')
-  .get(messageController.getConversations);
+router.route('/send').post(auth(), messageController.sendMessage);
 
-router
-  .route('/conversation/:userId')
-  .get(messageController.getMessages);
+router.route('/conversations').get(
+  auth(),
+  (req, res, next) => {
+    // console.log(`✅ GET /conversations route handler called - userId: ${req.user?.id}`);
+    next();
+  },
+  messageController.getConversations
+);
 
-router
-  .route('/read/:messageId')
-  .post(messageController.markAsRead);
+router.route('/conversation/:userId').get(auth(), messageController.getMessages);
 
-router
-  .route('/conversation/:userId/read')
-  .post(messageController.markConversationAsRead);
+router.route('/read/:messageId').post(auth(), messageController.markAsRead);
+
+router.route('/conversation/:userId/read').post(auth(), messageController.markConversationAsRead);
 
 module.exports = router;
-

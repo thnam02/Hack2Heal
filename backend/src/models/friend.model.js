@@ -55,35 +55,39 @@ function mapFriend(row) {
 // Friend Requests
 async function createFriendRequest(fromUserId, toUserId) {
   const now = new Date().toISOString();
-  
+
   // Check if request already exists
   const existing = db
     .prepare(`SELECT * FROM friend_requests WHERE fromUserId = ? AND toUserId = ?`)
     .get([fromUserId, toUserId]);
-  
+
   if (existing) {
     const error = new Error('Friend request already exists');
     error.status = 400;
     throw error;
   }
-  
+
   // Check if already friends
+  // eslint-disable-next-line no-use-before-define
   const friendship = await findFriendship(fromUserId, toUserId);
   if (friendship) {
     const error = new Error('Already friends');
     error.status = 400;
     throw error;
   }
-  
+
   // Check reverse request
   const reverse = db
     .prepare(`SELECT * FROM friend_requests WHERE fromUserId = ? AND toUserId = ?`)
     .get([toUserId, fromUserId]);
-  
+
   if (reverse && reverse.status === 'pending') {
     // Auto-accept if reverse request exists
+    // eslint-disable-next-line no-use-before-define
     await updateFriendRequestStatus(reverse.id, 'accepted');
+    // eslint-disable-next-line no-use-before-define
     await createFriendship(fromUserId, toUserId);
+    // eslint-disable-next-line no-use-before-define
     return findFriendRequestById(reverse.id);
   }
 
@@ -99,7 +103,8 @@ async function createFriendRequest(fromUserId, toUserId) {
       createdAt: now,
       updatedAt: now,
     });
-  
+
+  // eslint-disable-next-line no-use-before-define
   return findFriendRequestById(info.lastInsertRowid);
 }
 
@@ -109,18 +114,18 @@ async function findFriendRequestById(id) {
 }
 
 async function findFriendRequest(fromUserId, toUserId) {
-  const row = db
-    .prepare(`SELECT * FROM friend_requests WHERE fromUserId = ? AND toUserId = ?`)
-    .get([fromUserId, toUserId]);
+  const row = db.prepare(`SELECT * FROM friend_requests WHERE fromUserId = ? AND toUserId = ?`).get([fromUserId, toUserId]);
   return mapFriendRequest(row);
 }
 
 async function updateFriendRequestStatus(id, status) {
   const now = new Date().toISOString();
-  db.prepare(
-    `UPDATE friend_requests SET status = @status, updatedAt = @updatedAt WHERE id = @id`
-  ).run({ id, status, updatedAt: now });
-  
+  db.prepare(`UPDATE friend_requests SET status = @status, updatedAt = @updatedAt WHERE id = @id`).run({
+    id,
+    status,
+    updatedAt: now,
+  });
+
   return findFriendRequestById(id);
 }
 
@@ -132,7 +137,7 @@ async function getFriendRequestsForUser(userId) {
        ORDER BY createdAt DESC`
     )
     .all([userId, userId]);
-  
+
   return rows.map(mapFriendRequest);
 }
 
@@ -146,8 +151,8 @@ async function getPendingFriendRequestsForUser(userId) {
        ORDER BY fr.createdAt DESC`
     )
     .all([userId]);
-  
-  return rows.map(row => ({
+
+  return rows.map((row) => ({
     ...mapFriendRequest(row),
     userName: row.user_name,
     userEmail: row.user_email,
@@ -166,7 +171,7 @@ async function getAllFriendRequestsForUser(userId) {
        ORDER BY fr.createdAt DESC`
     )
     .all([userId]);
-  
+
   // Get outgoing requests (sent by user)
   const outgoingRows = db
     .prepare(
@@ -177,15 +182,15 @@ async function getAllFriendRequestsForUser(userId) {
        ORDER BY fr.createdAt DESC`
     )
     .all([userId]);
-  
+
   return {
-    incoming: incomingRows.map(row => ({
+    incoming: incomingRows.map((row) => ({
       ...mapFriendRequest(row),
       userName: row.user_name,
       userEmail: row.user_email,
       userAvatar: row.user_name?.charAt(0).toUpperCase() || '?',
     })),
-    outgoing: outgoingRows.map(row => ({
+    outgoing: outgoingRows.map((row) => ({
       ...mapFriendRequest(row),
       userName: row.user_name,
       userEmail: row.user_email,
@@ -197,8 +202,9 @@ async function getAllFriendRequestsForUser(userId) {
 // Friends
 async function createFriendship(userId1, userId2) {
   const now = new Date().toISOString();
-  
+
   // Create bidirectional friendship
+  // eslint-disable-next-line no-unused-vars
   const info1 = db
     .prepare(
       `INSERT OR IGNORE INTO friends (userId, friendId, createdAt)
@@ -209,7 +215,8 @@ async function createFriendship(userId1, userId2) {
       friendId: userId2,
       createdAt: now,
     });
-  
+
+  // eslint-disable-next-line no-unused-vars
   const info2 = db
     .prepare(
       `INSERT OR IGNORE INTO friends (userId, friendId, createdAt)
@@ -220,14 +227,13 @@ async function createFriendship(userId1, userId2) {
       friendId: userId1,
       createdAt: now,
     });
-  
+
+  // eslint-disable-next-line no-use-before-define
   return findFriendship(userId1, userId2);
 }
 
 async function findFriendship(userId1, userId2) {
-  const row = db
-    .prepare(`SELECT * FROM friends WHERE userId = ? AND friendId = ?`)
-    .get([userId1, userId2]);
+  const row = db.prepare(`SELECT * FROM friends WHERE userId = ? AND friendId = ?`).get([userId1, userId2]);
   return mapFriend(row);
 }
 
@@ -241,7 +247,7 @@ async function getFriendsForUser(userId) {
        ORDER BY f.createdAt DESC`
     )
     .all([userId]);
-  
+
   return rows.map((row) => ({
     id: row.id,
     userId: row.userId,
@@ -267,11 +273,10 @@ module.exports = {
   getFriendRequestsForUser,
   getPendingFriendRequestsForUser,
   getAllFriendRequestsForUser,
-  
+
   // Friends
   createFriendship,
   findFriendship,
   getFriendsForUser,
   deleteFriendship,
 };
-

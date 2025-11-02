@@ -25,4 +25,3 @@ module.exports = {
   getStats,
   getLeaderboard,
 };
-

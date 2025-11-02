@@ -8,7 +8,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { messageService, Conversation, Message } from '../services/message.service';
 import { friendService } from '../services/friend.service';
 import { toast } from 'sonner';
-import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 
 export function Messages() {
@@ -24,6 +23,9 @@ export function Messages() {
   const [friendshipStatus, setFriendshipStatus] = useState<'friends' | 'request_sent' | 'request_received' | 'not_friends' | 'loading'>('loading');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Track if messages are being loaded to prevent infinite loops
+  const loadingMessagesRef = useRef<Set<number>>(new Set());
 
   // Check if navigating from leaderboard with userId
   useEffect(() => {
@@ -34,10 +36,56 @@ export function Messages() {
     }
   }, [location.state]);
 
-  // Load conversations on mount
+  // Load conversations on mount (only once)
   useEffect(() => {
-    loadConversations();
-  }, []);
+    let isMounted = true;
+    
+    const loadAndSubscribe = async () => {
+      try {
+        // Load conversations first
+        await loadConversations();
+      } catch (error: unknown) {
+        console.error('[Messages] Error loading conversations:', error);
+      }
+      
+      // Subscribe to real-time conversation updates
+      // This handler will be called when backend emits message:conversations_updated
+      // We should NOT call loadConversations() again here to prevent loops
+      const handleConversationsUpdated = (conversations: Conversation[]) => {
+        if (!isMounted) return;
+        
+        console.log('[Messages] Received conversations_updated event, updating state');
+        const freshConversations = conversations || [];
+        setConversations(freshConversations);
+        // Update cache with fresh real-time data
+        messageService.updateCache(freshConversations);
+      };
+      
+      messageService.onConversationsUpdated(handleConversationsUpdated);
+      
+      return () => {
+        messageService.offConversationsUpdated(handleConversationsUpdated);
+      };
+    };
+
+    let cleanupFn: (() => void) | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cleanupPromise = loadAndSubscribe().then((fn: any) => {
+      cleanupFn = fn;
+    });
+
+    return () => {
+      isMounted = false;
+      if (cleanupFn) {
+        cleanupFn();
+      }
+      cleanupPromise.then(() => {
+        if (cleanupFn) {
+          cleanupFn();
+        }
+      });
+    };
+  }, []); // Empty deps - only run once on mount
 
   // Check friendship status when conversation is selected
   useEffect(() => {
@@ -46,18 +94,79 @@ export function Messages() {
     } else {
       setFriendshipStatus('loading');
     }
-  }, [selectedConversation, user?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversation, user?.id]); // checkFriendshipStatus is stable, no need to include
 
-  // Load messages when conversation is selected and users are friends
+  // Load messages when conversation is selected
   useEffect(() => {
-    if (selectedConversation && friendshipStatus === 'friends') {
-      loadMessages(selectedConversation);
-      // Mark conversation as read
-      messageService.markConversationAsRead(selectedConversation).catch(() => {});
+    console.log('[Messages] useEffect - selectedConversation:', selectedConversation, 'friendshipStatus:', friendshipStatus);
+    
+    // If conversation exists in conversations list, it means they have messages (are friends)
+    // So we can load messages even if friendshipStatus is still loading
+    const conversationExists = conversations.some(c => c.otherUserId === selectedConversation);
+    
+    if (selectedConversation) {
+      // Prevent loading the same conversation multiple times
+      if (loadingMessagesRef.current.has(selectedConversation)) {
+        console.log('[Messages] Messages already loading for conversation:', selectedConversation);
+        return;
+      }
+
+      // If conversation exists, we can load messages immediately
+      if (conversationExists || friendshipStatus === 'friends') {
+        console.log('[Messages] Loading messages for conversation:', selectedConversation, 'conversationExists:', conversationExists, 'friendshipStatus:', friendshipStatus);
+        
+        loadingMessagesRef.current.add(selectedConversation);
+        loadMessages(selectedConversation).finally(() => {
+          loadingMessagesRef.current.delete(selectedConversation);
+        });
+        
+        // Mark conversation as read (but don't wait for it to complete)
+        messageService.markConversationAsRead(selectedConversation).catch(() => {});
+      } else if (friendshipStatus === 'not_friends') {
+        console.log('[Messages] Not friends, clearing messages');
+        setMessages([]);
+      } else if (friendshipStatus === 'loading') {
+        // Wait for friendship status check
+        console.log('[Messages] Waiting for friendship status check...');
+      }
     } else {
       setMessages([]);
     }
-  }, [selectedConversation, friendshipStatus]);
+
+    // Subscribe to real-time message updates for this conversation
+    const handleMessageReceived = (message: Message) => {
+      // Only add message if it's for the current conversation
+      const fromUserId = Number(message.fromUserId);
+      const toUserId = Number(message.toUserId);
+      const currentUserId = Number(user?.id);
+      const selectedUserId = Number(selectedConversation);
+      
+      if (
+        (fromUserId === selectedUserId && toUserId === currentUserId) ||
+        (toUserId === selectedUserId && fromUserId === currentUserId)
+      ) {
+        setMessages(prev => {
+          // Check if message already exists (prevent duplicates)
+          const exists = prev.some(m => m.id === message.id);
+          if (exists) return prev;
+          return [...prev, message];
+        });
+      }
+    };
+
+    // Subscribe to real-time updates if conversation exists (they are friends)
+    if (selectedConversation && (conversationExists || friendshipStatus === 'friends')) {
+      messageService.onMessageReceived(handleMessageReceived);
+    }
+
+    return () => {
+      if (selectedConversation) {
+        messageService.offMessageReceived(handleMessageReceived);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedConversation, friendshipStatus, user?.id]); // conversations and loadMessages removed to prevent loop
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -65,18 +174,24 @@ export function Messages() {
   }, [messages]);
 
   const checkFriendshipStatus = async () => {
-    if (!selectedConversation || !user?.id) return;
+    if (!selectedConversation || !user?.id) {
+      console.log('[Messages] checkFriendshipStatus - missing selectedConversation or user.id');
+      return;
+    }
     
+    console.log('[Messages] checkFriendshipStatus - checking status for userId:', selectedConversation);
     try {
       setFriendshipStatus('loading');
       const status = await friendService.getFriendRequestStatus(selectedConversation);
+      console.log('[Messages] Friendship status result:', status.status);
       setFriendshipStatus(status.status);
       
       // If we have a userName from location state but not in conversations, set it
       if (location.state && (location.state as { userName?: string }).userName && !selectedUserName) {
         setSelectedUserName((location.state as { userName?: string }).userName || null);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      console.error('[Messages] Error checking friendship status:', error);
       setFriendshipStatus('not_friends');
     }
   };
@@ -84,25 +199,65 @@ export function Messages() {
   const loadConversations = async () => {
     try {
       setIsLoading(true);
-      const data = await messageService.getConversations();
-      setConversations(data);
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
+      console.log('[Messages] loadConversations called');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const data = (await messageService.getConversations(true)) as any; // Use cache
+      console.log('[Messages] loadConversations completed, got', data?.length || 0, 'conversations');
+      setConversations(data || []);
+    } catch (error: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = error as { code?: string } & any;
+      console.error('[Messages] Load conversations error:', error);
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to load conversations');
+      }
+      // Try to use expired cache as fallback
+      try {
+        const cached = localStorage.getItem('hack2heal_conversations');
+        if (cached) {
+          const conversations = JSON.parse(cached);
+          setConversations(conversations || []);
+        }
+      } catch (cacheError) {
+        console.error('[Messages] Cache fallback failed:', cacheError);
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const loadMessages = async (userId: number) => {
+  const loadMessages = async (userId: number): Promise<void> => {
+    console.log('[Messages] loadMessages called for userId:', userId);
     try {
+      setIsLoading(true);
       const data = await messageService.getMessages(userId);
-      setMessages(data);
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
+      console.log('[Messages] Loaded messages:', data?.length || 0, 'messages');
+      console.log('[Messages] Messages data:', data);
+      
+      // Ensure messages are set
+      if (data && Array.isArray(data) && data.length > 0) {
+        console.log('[Messages] Setting messages to state:', data.length);
+        setMessages(data);
+        
+        // Force re-render by scrolling to bottom
+        setTimeout(() => {
+          scrollToBottom();
+        }, 100);
+      } else {
+        console.log('[Messages] No messages found, setting empty array');
+        setMessages([]);
+      }
+    } catch (error: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = error as { code?: string } & any;
+      console.error('[Messages] Error loading messages:', error);
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to load messages');
       }
+      setMessages([]);
+    } finally {
+      setIsLoading(false);
+      console.log('[Messages] loadMessages completed, isLoading set to false');
     }
   };
 
@@ -119,9 +274,11 @@ export function Messages() {
       // Reload conversations to update last message
       await loadConversations();
       toast.success('Message sent!');
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
-        const errorMessage = error?.response?.data?.message || 'Failed to send message';
+    } catch (error: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = error as { code?: string; response?: { data?: { message?: string } } } & any;
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
+        const errorMessage = err?.response?.data?.message || 'Failed to send message';
         toast.error(errorMessage);
       }
       // Restore message input on error
@@ -137,9 +294,11 @@ export function Messages() {
       toast.success(`Friend request sent to ${selectedUserName || 'user'}!`);
       // Refresh friendship status
       await checkFriendshipStatus();
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
-        const errorMessage = error?.response?.data?.message || 'Failed to send friend request';
+    } catch (error: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = error as { code?: string; response?: { data?: { message?: string } } } & any;
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
+        const errorMessage = err?.response?.data?.message || 'Failed to send friend request';
         toast.error(errorMessage);
       }
     }
@@ -157,8 +316,10 @@ export function Messages() {
         // Refresh friendship status
         await checkFriendshipStatus();
       }
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
+    } catch (error: unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = error as { code?: string } & any;
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to accept friend request');
       }
     }
@@ -174,7 +335,11 @@ export function Messages() {
 
   const selectedConv = conversations.find(c => c.otherUserId === selectedConversation);
   const displayName = selectedConv?.otherUserName || selectedUserName || 'User';
-  const isFriends = friendshipStatus === 'friends';
+  // If conversation exists, they are friends (have messages)
+  const isFriends = selectedConv !== undefined || friendshipStatus === 'friends';
+  
+  // Debug logging
+  console.log('[Messages] Render - selectedConversation:', selectedConversation, 'selectedConv:', selectedConv, 'friendshipStatus:', friendshipStatus, 'isFriends:', isFriends, 'messages.length:', messages.length, 'isLoading:', isLoading);
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
@@ -271,8 +436,8 @@ export function Messages() {
         {/* Messages View */}
         <div className="lg:col-span-2">
           {selectedConversation ? (
-            <Card className="border-0 shadow-lg h-full flex flex-col">
-              <CardHeader className="border-b">
+            <Card className="border-0 shadow-lg flex flex-col" style={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
+              <CardHeader className="border-b flex-shrink-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#6F66FF] to-[#8C7BFF] flex items-center justify-center text-white font-semibold">
                     {selectedConv?.otherUserAvatar || displayName.charAt(0).toUpperCase()}
@@ -289,8 +454,8 @@ export function Messages() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="flex-1 flex flex-col p-0">
-                {friendshipStatus === 'loading' ? (
+              <CardContent className="flex-1 flex flex-col p-0 overflow-hidden" style={{ minHeight: 0, flex: '1 1 auto' }}>
+                {friendshipStatus === 'loading' && !selectedConv ? (
                   <div className="flex-1 flex items-center justify-center">
                     <p className="text-gray-500">Loading...</p>
                   </div>
@@ -299,51 +464,130 @@ export function Messages() {
                     {/* Messages Area */}
                     <div
                       ref={messagesContainerRef}
-                      className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50"
+                      className="flex-1 overflow-y-auto p-4 bg-gray-50"
+                      style={{ 
+                        minHeight: '400px',
+                        height: '100%',
+                        display: 'flex',
+                        flexDirection: 'column'
+                      }}
                     >
-                      {messages.length === 0 ? (
+                      {isLoading ? (
+                        <div className="flex-1 flex items-center justify-center py-12">
+                          <p className="text-gray-500">Loading messages...</p>
+                        </div>
+                      ) : messages.length === 0 ? (
                         <div className="text-center py-8 text-gray-500">
                           <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-50" />
                           <p>No messages yet</p>
                           <p className="text-xs mt-1">Start the conversation!</p>
                         </div>
                       ) : (
-                        messages.map((message) => {
-                          const isOwnMessage = message.fromUserId === Number(user?.id);
-                          return (
-                            <motion.div
-                              key={message.id}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
-                            >
+                        <div className="flex flex-col gap-4 py-2" style={{ width: '100%' }}>
+                          {messages.map((message, index) => {
+                            const isOwnMessage = message.fromUserId === Number(user?.id);
+                            console.log(`[Messages] Rendering message ${index}:`, message.id, message.content, 'isOwnMessage:', isOwnMessage);
+                            return (
                               <div
-                                className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                                  isOwnMessage
-                                    ? 'bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF] text-white'
-                                    : 'bg-white text-gray-900 border border-gray-200'
-                                }`}
+                                key={message.id}
+                                className={`flex w-full ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
+                                style={{ marginBottom: '8px' }}
                               >
-                                <p className="text-sm">{message.content}</p>
-                                <div className={`flex items-center gap-1 mt-1 text-xs ${
-                                  isOwnMessage ? 'text-white/70' : 'text-gray-400'
-                                }`}>
-                                  <span>
-                                    {new Date(message.createdAt).toLocaleTimeString([], {
-                                      hour: '2-digit',
-                                      minute: '2-digit',
-                                    })}
-                                  </span>
-                                  {isOwnMessage && message.read && (
-                                    <CheckCircle2 className="w-3 h-3" />
+                                <div
+                                  className={`max-w-[70%] rounded-2xl px-4 py-2 shadow-sm ${
+                                    isOwnMessage
+                                      ? 'bg-gradient-to-r from-[#6F66FF] to-[#8C7BFF]'
+                                      : ''
+                                  }`}
+                                  style={{ 
+                                    wordWrap: 'break-word', 
+                                    wordBreak: 'break-word',
+                                    backgroundColor: isOwnMessage ? undefined : '#FFFFFF',
+                                    border: isOwnMessage ? 'none' : '1px solid #E5E7EB'
+                                  }}
+                                >
+                                  {/* Inline styles with !important require 'as any' for TypeScript compatibility */}
+                                  {/* eslint-disable @typescript-eslint/no-explicit-any */}
+                                  {isOwnMessage ? (
+                                    <>
+                                      <p 
+                                        className="whitespace-pre-wrap break-words"
+                                        style={{ 
+                                          color: '#FFFFFF !important' as any,
+                                          fontSize: '14px !important' as any,
+                                          fontWeight: '400 !important' as any,
+                                          lineHeight: '1.5 !important' as any,
+                                          margin: '0 !important' as any,
+                                          padding: '0 !important' as any
+                                        }}
+                                      >
+                                        {message.content}
+                                      </p>
+                                      <div 
+                                        className="flex items-center gap-1 mt-1"
+                                        style={{ 
+                                          color: 'rgba(255, 255, 255, 0.7) !important' as any,
+                                          fontSize: '12px !important' as any,
+                                          lineHeight: '1.5 !important' as any
+                                        }}
+                                      >
+                                        <span>
+                                          {new Date(message.createdAt).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })}
+                                        </span>
+                                        {message.read && (
+                                          <CheckCircle2 
+                                            className="w-3 h-3" 
+                                            style={{ 
+                                              color: 'rgba(255, 255, 255, 0.7) !important' as any,
+                                              stroke: 'rgba(255, 255, 255, 0.7) !important' as any,
+                                              fill: 'rgba(255, 255, 255, 0.7) !important' as any
+                                            }} 
+                                          />
+                                        )}
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <p 
+                                        className="whitespace-pre-wrap break-words"
+                                        style={{ 
+                                          color: '#111827 !important' as any,
+                                          fontSize: '14px !important' as any,
+                                          fontWeight: '400 !important' as any,
+                                          lineHeight: '1.5 !important' as any,
+                                          margin: '0 !important' as any,
+                                          padding: '0 !important' as any
+                                        }}
+                                      >
+                                        {message.content}
+                                      </p>
+                                      <div 
+                                        className="flex items-center gap-1 mt-1"
+                                        style={{ 
+                                          color: '#6B7280 !important' as any,
+                                          fontSize: '12px !important' as any,
+                                          lineHeight: '1.5 !important' as any
+                                        }}
+                                      >
+                                        <span>
+                                          {new Date(message.createdAt).toLocaleTimeString([], {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })}
+                                        </span>
+                                      </div>
+                                    </>
                                   )}
                                 </div>
                               </div>
-                            </motion.div>
-                          );
-                        })
+                            );
+                          })}
+                          <div ref={messagesEndRef} style={{ height: '1px' }} />
+                        </div>
                       )}
-                      <div ref={messagesEndRef} />
                     </div>
 
                     {/* Message Input */}

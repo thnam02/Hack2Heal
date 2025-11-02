@@ -3,10 +3,15 @@ let server;
 const app = require('./app');
 const config = require('./config/config');
 const logger = require('./config/logger');
+const { initializeSocket } = require('./socket/socket');
 
 function startServer() {
   server = app.listen(config.port, () => {
     logger.info(`Listening to port ${config.port}`);
+
+    // Initialize Socket.io
+    initializeSocket(server);
+    logger.info('Socket.io initialized');
   });
 }
 

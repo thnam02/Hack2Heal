@@ -65,12 +65,13 @@ app.use(
 
 // Debug middleware to log all requests
 if (config.env !== 'production') {
-  app.use((req, res, next) => {
-    if (req.method === 'OPTIONS' || req.method === 'POST') {
-      console.log(`🔍 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
-    }
-    next();
-  });
+  // Debug middleware removed for production
+  // app.use((req, res, next) => {
+  //   if (req.method === 'OPTIONS' || req.method === 'POST') {
+  //     console.log(`🔍 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
+  //   }
+  //   next();
+  // });
 }
 
 // jwt authentication
@@ -88,13 +89,15 @@ app.use('/v1', routes);
 // send back a 404 error for any unknown api request
 app.use((req, res, next) => {
   // Ignore common non-API requests (browser auto-requests, etc.)
-  if (req.path === '/favicon.ico' || 
-      req.path.startsWith('/_next/') ||
-      req.path === '/robots.txt' ||
-      req.path.startsWith('/static/')) {
+  if (
+    req.path === '/favicon.ico' ||
+    req.path.startsWith('/_next/') ||
+    req.path === '/robots.txt' ||
+    req.path.startsWith('/static/')
+  ) {
     return res.status(404).end();
   }
-  
+
   // Only log API route 404s
   if (req.path.startsWith('/v1/')) {
     next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));

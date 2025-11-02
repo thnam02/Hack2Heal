@@ -5,7 +5,7 @@ import { Progress } from './ui/progress';
 import { Trophy, Target, Flame, Award, Star, Zap, CheckCircle2, UserPlus, MessageSquare } from 'lucide-react';
 import { useStats } from '../contexts/StatsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { friendService } from '../services/friend.service';
@@ -55,6 +55,22 @@ export function QuestsGamification() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [friendRequests, setFriendRequests] = useState<Set<number>>(new Set());
+  const [friendsList, setFriendsList] = useState<Set<number>>(new Set());
+
+  // Load friends list
+  useEffect(() => {
+    const loadFriends = async () => {
+      try {
+        const friends = await friendService.getFriends();
+        const friendIds = new Set(friends.map(f => f.friendId));
+        setFriendsList(friendIds);
+      } catch (error) {
+        console.error('Failed to load friends:', error);
+      }
+    };
+
+    loadFriends();
+  }, []);
 
   // Calculate level from XP (150 XP per level)
   const totalXp = stats?.totalXp || 0;
@@ -306,30 +322,34 @@ export function QuestsGamification() {
                   {/* Action Buttons - Only show for other users */}
                   {!user.isUser && (
                     <div className="flex flex-col gap-2 ml-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={async () => {
-                          try {
-                            await friendService.sendFriendRequest(user.userId);
-                            setFriendRequests(prev => new Set(prev).add(user.userId));
-                            toast.success(`Friend request sent to ${user.name}!`);
-                          } catch (error: any) {
-                            if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
-                              toast.error('Failed to send friend request');
-                            } else {
-                              // Fallback to local state if backend is unavailable
+                      {/* Only show Connect button if not already friends */}
+                      {!friendsList.has(user.userId) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            try {
+                              await friendService.sendFriendRequest(user.userId);
                               setFriendRequests(prev => new Set(prev).add(user.userId));
                               toast.success(`Friend request sent to ${user.name}!`);
+                            } catch (error: unknown) {
+                              const err = error as { code?: string };
+                              if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
+                                toast.error('Failed to send friend request');
+                              } else {
+                                // Fallback to local state if backend is unavailable
+                                setFriendRequests(prev => new Set(prev).add(user.userId));
+                                toast.success(`Friend request sent to ${user.name}!`);
+                              }
                             }
-                          }
-                        }}
-                        disabled={friendRequests.has(user.userId)}
-                        className="text-xs h-7 px-3 bg-white border-[#6F66FF] text-[#6F66FF] hover:bg-[#6F66FF]/10"
-                      >
-                        <UserPlus className="w-3 h-3 mr-1" />
-                        {friendRequests.has(user.userId) ? 'Sent' : 'Connect'}
-                      </Button>
+                          }}
+                          disabled={friendRequests.has(user.userId)}
+                          className="text-xs h-7 px-3 bg-white border-[#6F66FF] text-[#6F66FF] hover:bg-[#6F66FF]/10"
+                        >
+                          <UserPlus className="w-3 h-3 mr-1" />
+                          {friendRequests.has(user.userId) ? 'Sent' : 'Connect'}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"

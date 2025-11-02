@@ -1,7 +1,6 @@
-const { messageModel, User } = require('../models');
-const { friendService } = require('./friend.service');
-const ApiError = require('../utils/ApiError');
 const httpStatus = require('http-status');
+const { messageModel, User } = require('../models');
+const ApiError = require('../utils/ApiError');
 
 const sendMessage = async (fromUserId, toUserId, content) => {
   if (!content || !content.trim()) {
@@ -13,20 +12,24 @@ const sendMessage = async (fromUserId, toUserId, content) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Recipient not found');
   }
 
-  // Check if users are friends
-  const areUsersFriends = await friendService.areFriends(fromUserId, toUserId);
-  if (!areUsersFriends) {
+  // Check if users are friends - use friendModel directly to avoid circular dependency
+  const { friendModel } = require('../models');
+  const friendship = await friendModel.findFriendship(fromUserId, toUserId);
+  if (!friendship) {
     throw new ApiError(
       httpStatus.FORBIDDEN,
       'You can only message users who are your friends. Please send a friend request first.'
     );
   }
 
-  return await messageModel.createMessage(fromUserId, toUserId, content.trim());
+  return messageModel.createMessage(fromUserId, toUserId, content.trim());
 };
 
 const getConversations = async (userId) => {
-  return await messageModel.getConversationsForUser(userId);
+  // console.log(`[messageService.getConversations] userId: ${userId}`);
+  const conversations = await messageModel.getConversationsForUser(userId);
+  // console.log(`[messageService.getConversations] Result: ${conversations?.length || 0} conversations`);
+  return conversations || [];
 };
 
 const getMessages = async (userId1, userId2, limit) => {
@@ -35,7 +38,7 @@ const getMessages = async (userId1, userId2, limit) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
 
-  return await messageModel.getConversation(userId1, userId2, limit);
+  return messageModel.getConversation(userId1, userId2, limit);
 };
 
 const markAsRead = async (messageId, userId) => {
@@ -48,7 +51,7 @@ const markAsRead = async (messageId, userId) => {
     throw new ApiError(httpStatus.FORBIDDEN, 'You can only mark your own received messages as read');
   }
 
-  return await messageModel.markMessageAsRead(messageId);
+  return messageModel.markMessageAsRead(messageId);
 };
 
 const markConversationAsRead = async (userId, otherUserId) => {
@@ -57,7 +60,7 @@ const markConversationAsRead = async (userId, otherUserId) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
   }
 
-  return await messageModel.markConversationAsRead(otherUserId, userId);
+  return messageModel.markConversationAsRead(otherUserId, userId);
 };
 
 module.exports = {
@@ -67,4 +70,3 @@ module.exports = {
   markAsRead,
   markConversationAsRead,
 };
-

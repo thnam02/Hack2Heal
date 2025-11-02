@@ -53,7 +53,7 @@ export default function PainTransitionMatrix() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as any)}>
+          <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'heatmap' | 'sankey')}>
             <TabsList className="bg-white rounded-xl p-1">
               <TabsTrigger value="heatmap" className="rounded-lg text-xs">
                 Heatmap

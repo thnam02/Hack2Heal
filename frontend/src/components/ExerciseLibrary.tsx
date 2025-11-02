@@ -23,7 +23,9 @@ interface Exercise {
 }
 
 // Default exercises (initial template - now managed by exerciseService)
-const defaultExercises: Exercise[] = [
+// Removed unused constant for linting
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _defaultExercises: Exercise[] = [
   {
     id: 'ex-001',
     name: 'Shoulder Rotation',

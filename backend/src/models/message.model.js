@@ -18,13 +18,9 @@ db.prepare(
 ).run();
 
 // Create indexes for better query performance
-db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(fromUserId, toUserId, createdAt)`
-).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(fromUserId, toUserId, createdAt)`).run();
 
-db.prepare(
-  `CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(toUserId, read, createdAt)`
-).run();
+db.prepare(`CREATE INDEX IF NOT EXISTS idx_messages_to_user ON messages(toUserId, read, createdAt)`).run();
 
 function mapMessage(row) {
   if (!row) return null;
@@ -41,7 +37,8 @@ function mapMessage(row) {
 
 async function createMessage(fromUserId, toUserId, content) {
   const now = new Date().toISOString();
-  
+
+  // eslint-disable-next-line no-unused-vars
   const info = db
     .prepare(
       `INSERT INTO messages (fromUserId, toUserId, content, read, createdAt, updatedAt)
@@ -55,7 +52,8 @@ async function createMessage(fromUserId, toUserId, content) {
       createdAt: now,
       updatedAt: now,
     });
-  
+
+  // eslint-disable-next-line no-use-before-define
   return findMessageById(info.lastInsertRowid);
 }
 
@@ -73,12 +71,14 @@ async function getConversation(userId1, userId2, limit = 50) {
        LIMIT ?`
     )
     .all([userId1, userId2, userId2, userId1, limit]);
-  
+
   // Reverse to get chronological order
   return rows.reverse().map(mapMessage);
 }
 
 async function getConversationsForUser(userId) {
+  // console.log(`[getConversationsForUser] userId: ${userId}`);
+
   // Get all unique conversations for the user
   const rows = db
     .prepare(
@@ -94,51 +94,64 @@ async function getConversationsForUser(userId) {
        ORDER BY lastMessageTime DESC`
     )
     .all([userId, userId, userId]);
-  
+
+  // console.log(`[getConversationsForUser] Found ${rows?.length || 0} unique conversations from DB`);
+
+  if (!rows || rows.length === 0) {
+    return [];
+  }
+
   // Get user info and message details for each conversation
   const conversations = await Promise.all(
     rows.map(async (row) => {
-      const otherUser = await require('./user.model').findById(row.otherUserId);
-      
-      // Get last message
-      const lastMessageRow = db
-        .prepare(
-          `SELECT content FROM messages
-           WHERE (fromUserId = ? AND toUserId = ?) OR (fromUserId = ? AND toUserId = ?)
-           ORDER BY createdAt DESC LIMIT 1`
-        )
-        .get([userId, row.otherUserId, row.otherUserId, userId]);
-      
-      // Get unread count
-      const unreadRow = db
-        .prepare(
-          `SELECT COUNT(*) as count FROM messages 
-           WHERE toUserId = ? AND fromUserId = ? AND read = 0`
-        )
-        .get([userId, row.otherUserId]);
-      
-      return {
-        id: row.otherUserId,
-        userId: userId,
-        otherUserId: row.otherUserId,
-        otherUserName: otherUser?.name || 'Unknown',
-        otherUserAvatar: otherUser?.name?.charAt(0).toUpperCase() || '?',
-        lastMessage: lastMessageRow?.content || '',
-        lastMessageTime: row.lastMessageTime || '',
-        unreadCount: unreadRow?.count || 0,
-      };
+      try {
+        const otherUser = await require('./user.model').findById(row.otherUserId);
+
+        // Get last message
+        const lastMessageRow = db
+          .prepare(
+            `SELECT content FROM messages
+             WHERE (fromUserId = ? AND toUserId = ?) OR (fromUserId = ? AND toUserId = ?)
+             ORDER BY createdAt DESC LIMIT 1`
+          )
+          .get([userId, row.otherUserId, row.otherUserId, userId]);
+
+        // Get unread count
+        const unreadRow = db
+          .prepare(
+            `SELECT COUNT(*) as count FROM messages 
+             WHERE toUserId = ? AND fromUserId = ? AND read = 0`
+          )
+          .get([userId, row.otherUserId]);
+
+        return {
+          id: row.otherUserId,
+          userId,
+          otherUserId: row.otherUserId,
+          otherUserName: otherUser?.name || 'Unknown',
+          otherUserAvatar: otherUser?.name?.charAt(0).toUpperCase() || '?',
+          lastMessage: lastMessageRow?.content || '',
+          lastMessageTime: row.lastMessageTime || '',
+          unreadCount: unreadRow?.count || 0,
+        };
+      } catch (error) {
+        // console.error(`[getConversationsForUser] Error processing conversation with user ${row.otherUserId}:`, error);
+        return null;
+      }
     })
   );
-  
-  return conversations;
+
+  // Filter out null values (errors)
+  const validConversations = conversations.filter((c) => c !== null);
+  // console.log(`[getConversationsForUser] Returning ${validConversations.length} valid conversations`);
+
+  return validConversations;
 }
 
 async function markMessageAsRead(messageId) {
   const now = new Date().toISOString();
-  db.prepare(
-    `UPDATE messages SET read = 1, updatedAt = @updatedAt WHERE id = @id`
-  ).run({ id: messageId, updatedAt: now });
-  
+  db.prepare(`UPDATE messages SET read = 1, updatedAt = @updatedAt WHERE id = @id`).run({ id: messageId, updatedAt: now });
+
   return findMessageById(messageId);
 }
 
@@ -146,18 +159,16 @@ async function markConversationAsRead(fromUserId, toUserId) {
   const now = new Date().toISOString();
   db.prepare(
     `UPDATE messages 
-     SET read = 1, updatedAt = @updatedAt 
+     SET read = 1, updatedAt = ? 
      WHERE fromUserId = ? AND toUserId = ? AND read = 0`
-  ).run([fromUserId, toUserId, now]);
-  
+  ).run([now, fromUserId, toUserId]);
+
   return true;
 }
 
 async function getUnreadCountForUser(userId) {
-  const row = db
-    .prepare(`SELECT COUNT(*) as count FROM messages WHERE toUserId = ? AND read = 0`)
-    .get([userId]);
-  
+  const row = db.prepare(`SELECT COUNT(*) as count FROM messages WHERE toUserId = ? AND read = 0`).get([userId]);
+
   return row?.count || 0;
 }
 
@@ -170,4 +181,3 @@ module.exports = {
   markConversationAsRead,
   getUnreadCountForUser,
 };
-

@@ -37,8 +37,10 @@ export const StatsProvider: React.FC<StatsProviderProps> = ({ children }) => {
     try {
       const userStats = await statsService.getStats();
       setStats(userStats);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Keep existing stats if backend is unavailable
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _err = error;
     }
   };
 
@@ -47,7 +49,7 @@ export const StatsProvider: React.FC<StatsProviderProps> = ({ children }) => {
     try {
       const leaderboardData = await statsService.getLeaderboard(10);
       setLeaderboard(leaderboardData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Keep existing leaderboard if backend is unavailable
     }
   };
@@ -59,7 +61,7 @@ export const StatsProvider: React.FC<StatsProviderProps> = ({ children }) => {
       setStats(updatedStats);
       // Refresh leaderboard after completing session
       await refreshLeaderboard();
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Still continue - session completion is tracked locally
     }
   };
@@ -71,7 +73,7 @@ export const StatsProvider: React.FC<StatsProviderProps> = ({ children }) => {
       setStats(updatedStats);
       // Refresh leaderboard after adding XP
       await refreshLeaderboard();
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Still continue - XP can be tracked locally as fallback
     }
   };

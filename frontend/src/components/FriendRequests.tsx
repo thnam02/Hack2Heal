@@ -2,14 +2,12 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { UserPlus, UserCheck, UserX, Users, Clock, CheckCircle2, XCircle } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { UserPlus, UserCheck, UserX, Users, Clock } from 'lucide-react';
 import { friendService, FriendRequest } from '../services/friend.service';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
 
 export function FriendRequests() {
-  const { user } = useAuth();
   const [incomingRequests, setIncomingRequests] = useState<(FriendRequest & { userName?: string; userEmail?: string; userAvatar?: string })[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<(FriendRequest & { userName?: string; userEmail?: string; userAvatar?: string })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -17,6 +15,25 @@ export function FriendRequests() {
 
   useEffect(() => {
     loadFriendRequests();
+    
+    // Subscribe to real-time updates
+    const handleRequestsUpdated = (requests: { incoming: FriendRequest[]; outgoing: FriendRequest[] }) => {
+      setIncomingRequests(requests.incoming || []);
+      setOutgoingRequests(requests.outgoing || []);
+    };
+    
+    const handleRequestReceived = () => {
+      // Refresh requests when new request received
+      loadFriendRequests();
+    };
+
+    friendService.onFriendRequestsUpdated(handleRequestsUpdated);
+    friendService.onFriendRequestReceived(handleRequestReceived);
+
+    return () => {
+      friendService.offFriendRequestsUpdated(handleRequestsUpdated);
+      friendService.offFriendRequestReceived(handleRequestReceived);
+    };
   }, []);
 
   const loadFriendRequests = async () => {
@@ -26,8 +43,9 @@ export function FriendRequests() {
       
       setIncomingRequests(response.incoming || []);
       setOutgoingRequests(response.outgoing || []);
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to load friend requests');
       }
     } finally {
@@ -40,9 +58,10 @@ export function FriendRequests() {
       await friendService.acceptFriendRequest(requestId);
       toast.success(`You're now friends with ${userName}!`);
       await loadFriendRequests();
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
-        const errorMessage = error?.response?.data?.message || 'Failed to accept friend request';
+    } catch (error: unknown) {
+      const err = error as { code?: string; response?: { data?: { message?: string } } };
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
+        const errorMessage = err?.response?.data?.message || 'Failed to accept friend request';
         toast.error(errorMessage);
       }
     }
@@ -53,8 +72,9 @@ export function FriendRequests() {
       await friendService.rejectFriendRequest(requestId);
       toast.success(`Friend request from ${userName} rejected`);
       await loadFriendRequests();
-    } catch (error: any) {
-      if (error?.code !== 'ERR_NETWORK' && error?.code !== 'ERR_CONNECTION_REFUSED') {
+    } catch (error: unknown) {
+      const err = error as { code?: string };
+      if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to reject friend request');
       }
     }

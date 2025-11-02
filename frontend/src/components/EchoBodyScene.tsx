@@ -1,4 +1,4 @@
-import React, { useState, useRef, Suspense, forwardRef, useImperativeHandle, useEffect } from 'react';
+import React, { useState, useRef, Suspense, forwardRef, useImperativeHandle, useEffect, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF, Environment, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
@@ -72,7 +72,7 @@ function Avatar({ animationName = 'Idle Breathing' }: AvatarProps) {
   // Load the GLB model
   const gltf = useGLTF('/models/avatar3.glb');
   const scene = gltf.scene;
-  const animations = gltf.animations || [];
+  const animations = useMemo(() => gltf.animations || [], [gltf.animations]);
 
   // Don't modify materials at all - let GLB materials render as-is
   React.useEffect(() => {
@@ -81,9 +81,8 @@ function Avatar({ animationName = 'Idle Breathing' }: AvatarProps) {
     // Only log material info for debugging - don't modify
     scene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        const mesh = child as THREE.Mesh;
-        
         // Just check if material exists - don't modify it
+        // const mesh = child as THREE.Mesh; // Unused, removed for linting
       }
     });
   }, [scene]);
@@ -200,9 +199,17 @@ interface CameraControlsRef {
   resetCamera: () => void;
 }
 
+interface OrbitControlsInstance {
+  setAzimuthalAngle: (angle: number) => void;
+  getAzimuthalAngle: () => number;
+  setPolarAngle: (angle: number) => void;
+  getPolarAngle: () => number;
+  target: THREE.Vector3;
+}
+
 const CameraControls = forwardRef<CameraControlsRef>((_, ref) => {
   const { camera } = useThree();
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<OrbitControlsInstance | null>(null);
   const targetRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 4.5, 0));
   const initialCameraPosition = useRef<THREE.Vector3>(new THREE.Vector3(0, 6, 10));
 

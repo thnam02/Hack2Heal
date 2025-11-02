@@ -46,6 +46,7 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
   }, []);
 
   // Draw pose keypoints on canvas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const drawPose = useCallback((results: any) => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -300,7 +301,7 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
 
             // Start scan animation
             scanSoundRef.current?.play();
-            let startTime = Date.now();
+            const startTime = Date.now();
             const SCAN_DURATION = 3000; // 3 seconds
 
             const animate = () => {
@@ -328,16 +329,17 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
 
             animate();
           }
-        } catch (cameraError: any) {
+        } catch (cameraError: unknown) {
+          const err = cameraError as { message?: string; name?: string };
           let errorMessage = 'Failed to access camera. ';
           
-          if (cameraError.name === 'NotAllowedError' || cameraError.name === 'PermissionDeniedError') {
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
             errorMessage += 'Please allow camera permissions in your browser settings.';
-          } else if (cameraError.name === 'NotFoundError' || cameraError.name === 'DevicesNotFoundError') {
+          } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
             errorMessage += 'No camera found. Please connect a camera device.';
-          } else if (cameraError.name === 'NotReadableError' || cameraError.name === 'TrackStartError') {
+          } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
             errorMessage += 'Camera is already in use by another application. Please close other apps using the camera.';
-          } else if (cameraError.name === 'OverconstrainedError' || cameraError.name === 'ConstraintNotSatisfiedError') {
+          } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
             errorMessage += 'Camera constraints not supported. Trying with basic constraints...';
             
             // Retry with minimal constraints
@@ -358,11 +360,11 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
               onError?.(errorMessage);
             }
           } else {
-            errorMessage += `Error: ${cameraError.message || 'Unknown error'}`;
+            errorMessage += `Error: ${err.message || 'Unknown error'}`;
             onError?.(errorMessage);
           }
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         onError?.('Failed to initialize pose detection.');
       }
     };
@@ -413,12 +415,14 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
         videoStream = null;
       }
       
-      // Clear video element
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-        videoRef.current.onloadedmetadata = null;
-        videoRef.current.onplaying = null;
-        videoRef.current.onerror = null;
+      // Clear video element (copy ref to variable for cleanup)
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const videoElement = videoRef.current;
+      if (videoElement) {
+        videoElement.srcObject = null;
+        videoElement.onloadedmetadata = null;
+        videoElement.onplaying = null;
+        videoElement.onerror = null;
       }
       
       // Stop sound

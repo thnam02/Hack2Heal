@@ -30,6 +30,17 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  const handlePageChange = (page: string) => {
+    if (page === 'friends-messages') {
+      // Navigate to friends-messages page
+      onPageChange(page);
+      navigate(`/${page}`, { state: { tab: 'messages' } });
+    } else {
+      onPageChange(page);
+      navigate(`/${page}`);
+    }
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate('/login');
@@ -93,7 +104,7 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
           return (
             <button
               key={item.id}
-              onClick={() => onPageChange(item.id)}
+              onClick={() => handlePageChange(item.id)}
               className={cn(
                 'w-full flex items-center gap-3 px-4 py-3 rounded-lg mb-1 transition-all',
                 isActive

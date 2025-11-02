@@ -329,9 +329,6 @@ export const exerciseService = {
         return storedExercise;
       }
 
-      // Calculate remaining sessions AFTER increment
-      const remainingAfter = baseExercise.totalSessions - newCompletedSessions;
-
       // Calculate new progress
       const newProgress = Math.min(
         100,

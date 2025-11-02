@@ -1,6 +1,6 @@
+const httpStatus = require('http-status');
 const { friendModel, User } = require('../models');
 const ApiError = require('../utils/ApiError');
-const httpStatus = require('http-status');
 
 const sendFriendRequest = async (fromUserId, toUserId) => {
   if (fromUserId === toUserId) {
@@ -32,7 +32,7 @@ const sendFriendRequest = async (fromUserId, toUserId) => {
     };
   }
 
-  return await friendModel.createFriendRequest(fromUserId, toUserId);
+  return friendModel.createFriendRequest(fromUserId, toUserId);
 };
 
 const acceptFriendRequest = async (requestId, userId) => {
@@ -65,19 +65,19 @@ const rejectFriendRequest = async (requestId, userId) => {
     throw new ApiError(httpStatus.FORBIDDEN, 'You can only reject requests sent to you');
   }
 
-  return await friendModel.updateFriendRequestStatus(requestId, 'rejected');
+  return friendModel.updateFriendRequestStatus(requestId, 'rejected');
 };
 
 const getFriends = async (userId) => {
-  return await friendModel.getFriendsForUser(userId);
+  return friendModel.getFriendsForUser(userId);
 };
 
 const getFriendRequests = async (userId) => {
-  return await friendModel.getPendingFriendRequestsForUser(userId);
+  return friendModel.getPendingFriendRequestsForUser(userId);
 };
 
 const getAllFriendRequests = async (userId) => {
-  return await friendModel.getAllFriendRequestsForUser(userId);
+  return friendModel.getAllFriendRequestsForUser(userId);
 };
 
 const areFriends = async (userId1, userId2) => {
@@ -117,4 +117,3 @@ module.exports = {
   areFriends,
   getFriendRequestStatus,
 };
-
