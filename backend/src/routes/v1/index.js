@@ -3,6 +3,8 @@ const authRoute = require('./auth.route');
 const userRoute = require('./user.route');
 const sessionRoute = require('./session.route');
 const statsRoute = require('./stats.route');
+const friendRoute = require('./friend.route');
+const messageRoute = require('./message.route');
 
 const router = express.Router();
 
@@ -22,6 +24,14 @@ const defaultRoutes = [
   {
     path: '/stats',
     route: statsRoute,
+  },
+  {
+    path: '/friends',
+    route: friendRoute,
+  },
+  {
+    path: '/messages',
+    route: messageRoute,
   },
 ];
 

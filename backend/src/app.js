@@ -34,6 +34,22 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(xss());
 app.use(mongoSanitize());
 
+// enable cors FIRST, before authentication
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow all origins in development
+    callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
 // gzip compression, but bypass SSE streams to avoid buffering
 app.use(
   compression({
@@ -47,9 +63,15 @@ app.use(
   })
 );
 
-// enable cors
-app.use(cors());
-app.options('*', cors());
+// Debug middleware to log all requests
+if (config.env !== 'production') {
+  app.use((req, res, next) => {
+    if (req.method === 'OPTIONS' || req.method === 'POST') {
+      console.log(`🔍 ${req.method} ${req.path} - Origin: ${req.headers.origin || 'none'}`);
+    }
+    next();
+  });
+}
 
 // jwt authentication
 app.use(passport.initialize());
@@ -65,7 +87,21 @@ app.use('/v1', routes);
 
 // send back a 404 error for any unknown api request
 app.use((req, res, next) => {
-  next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
+  // Ignore common non-API requests (browser auto-requests, etc.)
+  if (req.path === '/favicon.ico' || 
+      req.path.startsWith('/_next/') ||
+      req.path === '/robots.txt' ||
+      req.path.startsWith('/static/')) {
+    return res.status(404).end();
+  }
+  
+  // Only log API route 404s
+  if (req.path.startsWith('/v1/')) {
+    next(new ApiError(httpStatus.NOT_FOUND, 'Not found'));
+  } else {
+    // Silently ignore non-API routes
+    res.status(404).end();
+  }
 });
 
 // convert error to ApiError, if needed

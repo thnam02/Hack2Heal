@@ -30,7 +30,13 @@ const errorHandler = (err, req, res, next) => {
   };
 
   if (config.env === 'development') {
-    logger.error(err);
+    console.error(`❌ Error handler: ${statusCode} - ${message} - ${req.method} ${req.path}`);
+    // Log 404s as warnings instead of errors (less noise)
+    if (statusCode === httpStatus.NOT_FOUND) {
+      logger.warn(`${statusCode} - ${message} - ${req.originalUrl} - ${req.method} - ${req.ip}`);
+    } else {
+      logger.error(err);
+    }
   }
 
   res.status(statusCode).send(response);

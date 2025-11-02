@@ -3,3 +3,5 @@ module.exports.emailService = require('./email.service');
 module.exports.tokenService = require('./token.service');
 module.exports.userService = require('./user.service');
 module.exports.statsService = require('./stats.service');
+module.exports.friendService = require('./friend.service');
+module.exports.messageService = require('./message.service');
