@@ -94,39 +94,81 @@ export function Settings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" defaultValue={firstName} />
+                  <Input 
+                    id="firstName"
+                    name="firstName"
+                    type="text"
+                    autoComplete="given-name"
+                    defaultValue={firstName} 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" defaultValue={lastName} />
+                  <Input 
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    autoComplete="family-name"
+                    defaultValue={lastName} 
+                  />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue={user?.email || ''} />
+                <Input 
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  defaultValue={user?.email || ''} 
+                />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" type="tel" placeholder="Enter your phone number" />
+                <Input 
+                  id="phone"
+                  name="phone"
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="Enter your phone number" 
+                />
               </div>
 
               <Separator />
 
               <div className="space-y-2">
                 <Label htmlFor="currentPassword">Current Password</Label>
-                <Input id="currentPassword" type="password" placeholder="••••••••" />
+                <Input 
+                  id="currentPassword"
+                  name="currentPassword"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="••••••••" 
+                />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="newPassword">New Password</Label>
-                  <Input id="newPassword" type="password" placeholder="••••••••" />
+                  <Input 
+                    id="newPassword"
+                    name="newPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="••••••••" 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm Password</Label>
-                  <Input id="confirmPassword" type="password" placeholder="••••••••" />
+                  <Input 
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="••••••••" 
+                  />
                 </div>
               </div>
 
@@ -151,13 +193,16 @@ export function Settings() {
                     <Mail className="w-5 h-5 text-[#2C2E6F]" />
                   </div>
                   <div>
-                    <p className="text-[#2C2E6F]">Email Notifications</p>
+                    <label htmlFor="email-notifications" className="text-[#2C2E6F] cursor-pointer">Email Notifications</label>
                     <p className="text-sm text-gray-600">Receive updates via email</p>
                   </div>
                 </div>
                 <Switch 
+                  id="email-notifications"
+                  name="emailNotifications"
                   checked={emailNotifications}
                   onCheckedChange={setEmailNotifications}
+                  aria-label="Email Notifications"
                 />
               </div>
 
@@ -169,13 +214,16 @@ export function Settings() {
                     <Bell className="w-5 h-5 text-[#2C2E6F]" />
                   </div>
                   <div>
-                    <p className="text-[#2C2E6F]">Push Notifications</p>
+                    <label htmlFor="push-notifications" className="text-[#2C2E6F] cursor-pointer">Push Notifications</label>
                     <p className="text-sm text-gray-600">Get notified about session reminders</p>
                   </div>
                 </div>
                 <Switch 
+                  id="push-notifications"
+                  name="pushNotifications"
                   checked={pushNotifications}
                   onCheckedChange={setPushNotifications}
+                  aria-label="Push Notifications"
                 />
               </div>
 
@@ -187,20 +235,23 @@ export function Settings() {
                     <MessageSquare className="w-5 h-5 text-[#2C2E6F]" />
                   </div>
                   <div>
-                    <p className="text-[#2C2E6F]">Weekly Progress Report</p>
+                    <label htmlFor="weekly-report" className="text-[#2C2E6F] cursor-pointer">Weekly Progress Report</label>
                     <p className="text-sm text-gray-600">Summary of your recovery progress</p>
                   </div>
                 </div>
                 <Switch 
+                  id="weekly-report"
+                  name="weeklyReport"
                   checked={weeklyReport}
                   onCheckedChange={setWeeklyReport}
+                  aria-label="Weekly Progress Report"
                 />
               </div>
 
               <Separator />
 
               <div className="space-y-3">
-                <Label>Notification Frequency</Label>
+                <Label htmlFor="notification-frequency">Notification Frequency</Label>
                 <div className="grid grid-cols-3 gap-3">
                   <Button variant="outline" className="bg-[#2C2E6F] text-white">Daily</Button>
                   <Button variant="outline">Weekly</Button>
@@ -235,8 +286,11 @@ export function Settings() {
                       </div>
                     </div>
                     <Switch 
+                      id={`device-${index}`}
+                      name={`device-${index}`}
                       checked={device.connected}
                       onCheckedChange={() => {}}
+                      aria-label={`${device.name} connection`}
                     />
                   </div>
                   {index < connectedDevices.length - 1 && <Separator className="my-4" />}
@@ -266,13 +320,16 @@ export function Settings() {
                       <Moon className="w-5 h-5 text-[#2C2E6F]" />
                     </div>
                     <div>
-                      <p className="text-[#2C2E6F]">Dark Mode</p>
+                      <label htmlFor="dark-mode" className="text-[#2C2E6F] cursor-pointer">Dark Mode</label>
                       <p className="text-sm text-gray-600">Use dark theme for the interface</p>
                     </div>
                   </div>
                   <Switch 
+                    id="dark-mode"
+                    name="darkMode"
                     checked={darkMode}
                     onCheckedChange={setDarkMode}
+                    aria-label="Dark Mode"
                   />
                 </div>
               </CardContent>

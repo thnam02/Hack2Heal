@@ -17,6 +17,13 @@ import { Settings } from './components/Settings';
 import { ClinicianDashboard } from './components/ClinicianDashboard';
 import { PatientManagement } from './components/PatientManagement';
 import { AnalyticsPrediction } from './components/AnalyticsPrediction';
+import ActuarialInsights from './components/ActuarialInsights';
+import { EchoBodyScene } from './components/EchoBodyScene';
+import { ScanToAvatar } from './components/ScanToAvatar';
+import { Messages } from './components/Messages';
+import { FriendRequests } from './components/FriendRequests';
+import { FriendsAndMessages } from './components/FriendsAndMessages';
+import { Toaster } from './components/ui/sonner';
 
 function AppContent() {
   const { isAuthenticated, user } = useAuth();
@@ -79,10 +86,20 @@ function AppContent() {
           return <LiveSession />;
         case 'quests':
           return <QuestsGamification />;
+        case 'friends-messages':
+          return <FriendsAndMessages />;
+        case 'friend-requests':
+          return <FriendRequests />;
+        case 'messages':
+          return <Messages />;
         case 'future-self':
           return <FutureSelfLetter />;
         case 'clarity-hub':
           return <RehabClarityHub userRole="patient" />;
+        case 'body-scan':
+          return <ScanToAvatar />;
+        case 'echo-body':
+          return <EchoBodyScene />;
         case 'exercises':
           return <ExerciseLibrary />;
         case 'settings':
@@ -97,7 +114,7 @@ function AppContent() {
       switch (currentPage) {
         case 'clinician-dashboard':
         case 'dashboard':
-          return <ClinicianDashboard />;
+          return <ClinicianDashboard onNavigate={handlePageChange} />;
         case 'patients':
           return <PatientManagement />;
         case 'clarity-hub':
@@ -106,25 +123,32 @@ function AppContent() {
           return <ExerciseLibrary />;
         case 'analytics':
           return <AnalyticsPrediction />;
+        case 'actuarial-insights':
+          return <ActuarialInsights onBack={() => handlePageChange('clinician-dashboard')} />;
         case 'settings':
           return <Settings />;
         default:
-          return <ClinicianDashboard />;
+          return <ClinicianDashboard onNavigate={handlePageChange} />;
       }
     }
     
     return <PatientDashboard />;
   };
 
+  // Check if current page should be full screen (only body-scan during scanning, echo-body shows sidebar)
+  const isFullScreen = currentPage === 'body-scan';
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#E9E6F9] via-white to-white">
-      <Navigation 
-        currentPage={currentPage}
-        onPageChange={handlePageChange}
-        userRole={userRole}
-      />
+      {!isFullScreen && (
+        <Navigation 
+          currentPage={currentPage}
+          onPageChange={handlePageChange}
+          userRole={userRole}
+        />
+      )}
       
-      <main className="ml-64 p-8">
+      <main className={isFullScreen ? 'w-full h-screen' : 'ml-64 p-8'}>
         {renderPage()}
       </main>
     </div>
@@ -135,6 +159,7 @@ function App() {
   return (
     <AuthProvider>
       <StatsProvider>
+        <Toaster />
         <Router>
           <Routes>
             <Route path="/login" element={<LoginOnboarding />} />

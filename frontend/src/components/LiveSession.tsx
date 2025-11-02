@@ -83,17 +83,13 @@ export function LiveSession() {
     const storedExercise = sessionStorage.getItem('selectedExercise');
     const storedExerciseId = sessionStorage.getItem('selectedExerciseId');
     
-    console.log('LiveSession: Checking for exercise from sessionStorage:', { storedExercise, storedExerciseId });
-    
     if (storedExercise) {
       try {
         const exercise = JSON.parse(storedExercise) as ExerciseFromLibrary;
-        console.log('LiveSession: Found exercise:', exercise);
         
         // Get fresh exercise data from service to ensure we have latest progress
         const freshExercise = exerciseService.getExerciseById(exercise.id);
         if (freshExercise) {
-          console.log('LiveSession: Using fresh exercise data:', freshExercise);
           setSelectedExercise(freshExercise);
           // Map exercise name to backend exercise type
           if (freshExercise.name.toLowerCase().includes('shoulder')) {
@@ -115,13 +111,12 @@ export function LiveSession() {
         sessionStorage.removeItem('selectedExercise');
         sessionStorage.removeItem('selectedExerciseId');
       } catch (error) {
-        console.error('Failed to parse stored exercise:', error);
+        // Ignore parse errors
       }
     } else if (storedExerciseId) {
       // If only ID is stored, get exercise from service
       const exercise = exerciseService.getExerciseById(storedExerciseId);
       if (exercise) {
-        console.log('LiveSession: Loaded exercise from service by ID:', exercise);
         setSelectedExercise(exercise);
         if (exercise.name.toLowerCase().includes('shoulder')) {
           setExerciseOption('shoulder_rotation');
@@ -130,13 +125,10 @@ export function LiveSession() {
         }
       }
       sessionStorage.removeItem('selectedExerciseId');
-    } else {
-      console.log('LiveSession: No exercise found in sessionStorage - showing standalone mode');
     }
   }, []);
 
   const handleMetricsPayload = useCallback((payload: Record<string, unknown>) => {
-    console.log('Live metrics payload:', payload);
     setMetrics({
       postureScore: toNumber(payload['posture_score']),
       alignment: (payload['alignment'] as string) ?? '-',
@@ -182,7 +174,6 @@ export function LiveSession() {
     // Only reset if the exercise ID actually changed (new exercise selected)
     // Don't reset if we're just updating the exercise data after completion
     if (currentExerciseId && currentExerciseId !== prevExerciseIdRef.current) {
-      console.log(`🔄 New exercise selected: ${currentExerciseId} - resetting set/rep tracking`);
       setCurrentSet(1);
       setCurrentRep(0);
       setSessionComplete(false);
@@ -213,14 +204,12 @@ export function LiveSession() {
         setSelectedCameraIndex(String(videoInputs[0].index));
       }
     } catch (error) {
-      console.error('Failed to enumerate devices', error);
-      console.error('Unable to access cameras. Check permissions.');
+      // Ignore device enumeration errors
     }
   };
 
   const startPreview = async () => {
     if (!selectedDeviceId) {
-      console.warn('Select a camera before starting the preview.');
       return;
     }
 
@@ -233,8 +222,7 @@ export function LiveSession() {
       setIsPreviewActive(true);
       // Preview running
     } catch (error) {
-      console.error('Unable to start preview', error);
-      console.error('Preview failed. Make sure the camera is not in use by another app.');
+      // Ignore preview errors
     }
   };
 
@@ -252,12 +240,10 @@ export function LiveSession() {
   const startSession = () => {
     // Validation
     if (!selectedCameraIndex && !selectedDeviceId) {
-      console.warn('Please select a camera before starting analysis.');
       return;
     }
 
     if (!exerciseOption) {
-      console.warn('Please select an exercise before starting analysis.');
       return;
     }
 
@@ -266,7 +252,6 @@ export function LiveSession() {
       eventSourceRef.current = null;
     }
 
-    console.log('Connecting to analysis service...');
     const url = new URL(`${API_BASE_URL}/sessions/start`);
     url.searchParams.set('exercise', exerciseOption);
     url.searchParams.set('camera', selectedCameraIndex || '0');
@@ -276,12 +261,8 @@ export function LiveSession() {
     source.addEventListener('status', (event) => {
       const data = JSON.parse((event as MessageEvent<string>).data) as StatusEvent;
       if (data.level === 'error') {
-        console.error(`Session error: ${data.message ?? 'Session error'}`);
         setIsSessionActive(false);
         return;
-      }
-      if (data.message) {
-        console.log('Status:', data.message);
       }
       if (data.code !== undefined) {
         setIsSessionActive(false);
@@ -299,17 +280,12 @@ export function LiveSession() {
         handleMetricsPayload(data);
         return;
       }
-      if (data.message) {
-        console.log('Status:', data.message);
-      }
     };
 
     source.addEventListener('message', (event) => handleGenericEvent(event as MessageEvent<string>));
     source.onmessage = handleGenericEvent;
 
-    source.onerror = (error) => {
-      console.error('EventSource error:', error);
-      console.error('Connection failed. Check if backend is running and Python script exists.');
+    source.onerror = () => {
       setIsSessionActive(false);
       source.close();
       eventSourceRef.current = null;
@@ -326,7 +302,6 @@ export function LiveSession() {
       eventSourceRef.current = null;
     }
     setIsSessionActive(false);
-    console.log('Session ended.');
   };
 
   // Calculate exercise data early so handleRepComplete can use it
@@ -369,16 +344,12 @@ export function LiveSession() {
   const totalReps = useMemo(() => parseInt(currentExercise.reps) || 10, [currentExercise.reps]);
 
   const handleRepComplete = useCallback(() => {
-    console.log(`🔄 Rep complete clicked: currentRep=${currentRep}, totalReps=${totalReps}, currentSet=${currentSet}, totalSets=${totalSets}`);
-    console.log(`📊 Exercise: ${currentExercise.name} (${currentExercise.sets} sets × ${currentExercise.reps} reps)`);
-
     // Calculate the new rep count
     const newRep = currentRep + 1;
     
     // Check if this rep completes the current set
     if (newRep >= totalReps) {
       // Set complete - move to next set or finish
-      console.log(`🎯 Set ${currentSet} complete! (Rep ${newRep} of ${totalReps})`);
       
       // First update the rep count to show set complete
       setCurrentRep(newRep);
@@ -386,7 +357,6 @@ export function LiveSession() {
       // Check if this is the final set (use === for exact match)
       if (currentSet === totalSets) {
         // This is the final set - all sets complete!
-        console.log(`🎉 FINAL SET COMPLETE: Set ${currentSet} of ${totalSets} for ${currentExercise.name}!`);
         // Set completion flags IMMEDIATELY to prevent any resets
         setSessionComplete(true);
         setShowCelebration(true);
@@ -395,37 +365,28 @@ export function LiveSession() {
         endSession();
         
         // Complete session stats (+20 XP, increment session, update streak, quest progress)
-        completeSessionStats().catch((error) => {
-          console.error('Failed to complete session stats:', error);
-        });
+        completeSessionStats().catch(() => {});
         
         // Update exercise session count if exercise was selected from library
         // Do this AFTER setting sessionComplete to prevent reset loops
         if (selectedExercise?.id) {
-          console.log(`🔄 Completing session for exercise: ${selectedExercise.id} (${selectedExercise.name})`);
           try {
-            console.log(`🔍 BEFORE completeSession: selectedExercise has ${selectedExercise.completedSessions}/${selectedExercise.totalSessions}`);
             const updatedExercise = exerciseService.completeSession(selectedExercise.id);
             if (updatedExercise) {
-              console.log(`🔍 AFTER completeSession: returned exercise has ${updatedExercise.completedSessions}/${updatedExercise.totalSessions}`);
               // Update the selectedExercise state with fresh data
               // The useEffect won't reset because:
               // 1. It only depends on selectedExercise?.id (not the whole object)
               // 2. The ref (prevExerciseIdRef) tracks if the ID actually changed
               // 3. Since the ID is the same, it won't trigger a reset
-              console.log(`📝 Updating exercise data (ID unchanged: ${updatedExercise.id}), should not reset counters`);
-              console.log(`📝 Setting selectedExercise to: ${updatedExercise.completedSessions}/${updatedExercise.totalSessions}`);
               setSelectedExercise(updatedExercise);
               
               // Dispatch custom event to update ExerciseLibrary if open (for same tab)
               // IMPORTANT: Use a longer delay to ensure ExerciseLibrary has time to set up listeners
               // ExerciseLibrary might be unmounting/remounting during navigation
               setTimeout(() => {
-                console.log('📢 LiveSession: Dispatching exerciseProgressUpdated event');
                 // Dispatch simple event (triggers ExerciseLibrary reload)
                 const event = new Event('exerciseProgressUpdated', { bubbles: true });
                 window.dispatchEvent(event);
-                console.log('📢 LiveSession: Simple event dispatched');
                 
                 // Also dispatch custom event with details
                 const detailEvent = new CustomEvent('exerciseProgressUpdated', {
@@ -433,7 +394,6 @@ export function LiveSession() {
                   bubbles: true,
                 });
                 window.dispatchEvent(detailEvent);
-                console.log('📢 LiveSession: Custom event dispatched with details');
                 
                 // Retry dispatch after a longer delay to catch ExerciseLibrary if it wasn't ready
                 setTimeout(() => {
@@ -442,35 +402,12 @@ export function LiveSession() {
                     bubbles: true,
                   });
                   window.dispatchEvent(retryEvent);
-                  console.log('📢 LiveSession: Retry event dispatched (for late-mounted ExerciseLibrary)');
                 }, 300); // Retry after 300ms for late-mounted components
               }, 250); // Initial delay: 250ms to ensure localStorage write + listener setup
-              
-              console.log(`✅ Exercise "${updatedExercise.name}" session completed.`);
-              console.log(`   Progress: ${updatedExercise.completedSessions}/${updatedExercise.totalSessions} sessions (${updatedExercise.progress}%)`);
-              console.log(`   Remaining sessions: ${updatedExercise.totalSessions - updatedExercise.completedSessions}`);
-              
-              // Verify localStorage matches the returned exercise
-              setTimeout(() => {
-                const stored = localStorage.getItem('exercise_progress');
-                console.log('📦 Current localStorage state:', stored);
-                if (stored) {
-                  const verifyMap = JSON.parse(stored);
-                  const storedValue = verifyMap[updatedExercise.id]?.completedSessions;
-                  console.log(`🔍 Verification: localStorage has ${storedValue}, returned exercise has ${updatedExercise.completedSessions}`);
-                  if (storedValue !== updatedExercise.completedSessions) {
-                    console.error(`❌ MISMATCH: localStorage=${storedValue} but returned=${updatedExercise.completedSessions}`);
-                  }
-                }
-              }, 200);
-            } else {
-              console.warn(`⚠️ Failed to update exercise ${selectedExercise.id}`);
             }
           } catch (error) {
-            console.error('❌ Error updating exercise session:', error);
+            // Ignore exercise session update errors
           }
-        } else {
-          console.log('ℹ️ No selected exercise - skipping exercise session update');
         }
       } else {
         // Move to next set after a delay
@@ -479,7 +416,6 @@ export function LiveSession() {
           setCurrentSet((prevSet) => {
             if (prevSet < totalSets) {
               const nextSet = prevSet + 1;
-              console.log(`📈 Moving to set ${nextSet} of ${totalSets}`);
               // Reset rep count for the next set
               setCurrentRep(0);
               return nextSet;
@@ -490,7 +426,6 @@ export function LiveSession() {
       }
     } else {
       // Just increment the rep count
-      console.log(`✅ Incrementing rep: ${currentRep} → ${newRep}`);
       setCurrentRep(newRep);
     }
   }, [currentRep, totalReps, currentSet, totalSets, currentExercise, selectedExercise, completeSessionStats]);
@@ -517,10 +452,6 @@ export function LiveSession() {
   }, [currentSet, currentRep, totalSets, totalReps]);
 
   // Always show enhanced UI (unified experience)
-  console.log('LiveSession: Rendering unified enhanced UI with exercise:', currentExercise.name);
-  console.log('LiveSession: Instructions:', currentExercise.instructions);
-  console.log('LiveSession: Instructions length:', currentExercise.instructions?.length);
-  console.log('LiveSession: Tags:', currentExercise.tags);
   return (
       <div className="p-8">
         {/* Header */}

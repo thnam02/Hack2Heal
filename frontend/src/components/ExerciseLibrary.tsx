@@ -159,18 +159,6 @@ export function ExerciseLibrary() {
   useEffect(() => {
     const loadExercises = () => {
       const loadedExercises = exerciseService.getExercises();
-      console.log('📚 ExerciseLibrary: Loading exercises', loadedExercises.map(ex => {
-        const remaining = ex.totalSessions - ex.completedSessions;
-        return `${ex.name}: ${remaining}/${ex.totalSessions} remaining`;
-      }));
-      
-      // Find the specific exercise to verify its state
-      const wallPushUp = loadedExercises.find(ex => ex.id === 'ex-005');
-      if (wallPushUp) {
-        const remaining = wallPushUp.totalSessions - wallPushUp.completedSessions;
-        console.log(`🔍 ExerciseLibrary: Wall Push-Up state: ${remaining}/${wallPushUp.totalSessions} remaining (${wallPushUp.completedSessions} completed)`);
-      }
-      
       setExercises(loadedExercises);
     };
     loadExercises();
@@ -180,7 +168,6 @@ export function ExerciseLibrary() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        console.log('👁️ ExerciseLibrary: Page visible - reloading exercises');
         const loadedExercises = exerciseService.getExercises();
         setExercises(loadedExercises);
       }
@@ -194,56 +181,28 @@ export function ExerciseLibrary() {
 
   // Listen for storage events to update when exercises are completed
   useEffect(() => {
-    console.log('🔧 ExerciseLibrary: Setting up event listeners for exerciseProgressUpdated');
-    
-    const handleStorageChange = (e?: StorageEvent | Event) => {
-      const eventType = e?.type || 'manual';
-      console.log('🔄 ExerciseLibrary: Received progress update event', eventType);
-      
+    const handleStorageChange = () => {
       // Use a slightly longer delay to ensure localStorage is fully updated
       setTimeout(() => {
         const loadedExercises = exerciseService.getExercises();
-        const exercisesDetails = loadedExercises.map(ex => {
-          const remaining = ex.totalSessions - ex.completedSessions;
-          return `${ex.name}: ${remaining}/${ex.totalSessions} sessions remaining`;
-        });
-        console.log('📊 ExerciseLibrary: Loaded exercises after event:', exercisesDetails);
-        console.log('📊 ExerciseLibrary: Setting exercises state...');
         setExercises(loadedExercises);
-        console.log('✅ ExerciseLibrary: Exercises state updated');
-        console.log('✅ ExerciseLibrary: Updated exercises count:', loadedExercises.length);
-        
-        // Log specific exercise if provided in event detail
-        if (e && 'detail' in e && e.detail && typeof e.detail === 'object' && 'exerciseId' in e.detail) {
-          const exerciseId = (e.detail as { exerciseId: string }).exerciseId;
-          const updatedExercise = loadedExercises.find(ex => ex.id === exerciseId);
-          if (updatedExercise) {
-            const remaining = updatedExercise.totalSessions - updatedExercise.completedSessions;
-            console.log(`🎯 ExerciseLibrary: Updated exercise ${exerciseId}: ${remaining}/${updatedExercise.totalSessions} remaining (${updatedExercise.completedSessions} completed)`);
-          }
-        }
       }, 150); // Slightly longer delay to ensure localStorage write is complete
     };
 
     // Listen for storage events (cross-tab)
     window.addEventListener('storage', handleStorageChange);
-    console.log('✅ ExerciseLibrary: Added storage event listener');
     
     // Listen for custom events (same-tab)
     window.addEventListener('exerciseProgressUpdated', handleStorageChange);
-    console.log('✅ ExerciseLibrary: Added exerciseProgressUpdated event listener');
     
     // Also listen for focus to reload when user comes back to the tab
     const handleFocus = () => {
-      console.log('👁️ ExerciseLibrary: Page focused - reloading exercises');
       const loadedExercises = exerciseService.getExercises();
       setExercises(loadedExercises);
     };
     window.addEventListener('focus', handleFocus);
-    console.log('✅ ExerciseLibrary: Added focus event listener');
 
     return () => {
-      console.log('🧹 ExerciseLibrary: Cleaning up event listeners');
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('exerciseProgressUpdated', handleStorageChange);
       window.removeEventListener('focus', handleFocus);
@@ -290,9 +249,13 @@ export function ExerciseLibrary() {
       {/* Search Bar */}
       <div className="mb-6 flex gap-4">
         <div className="flex-1 relative">
+          <label htmlFor="search-exercises" className="sr-only">Search your prescribed exercises</label>
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#1B1E3D]/40" size={20} />
           <Input
-            type="text"
+            id="search-exercises"
+            name="searchExercises"
+            type="search"
+            autoComplete="off"
             placeholder="Search your prescribed exercises..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

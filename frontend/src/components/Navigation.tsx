@@ -11,7 +11,9 @@ import {
   FileText,
   Activity,
   Brain,
-  LogOut
+  LogOut,
+  Scan,
+  MessageSquare
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -49,8 +51,11 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
     { id: 'ai-plan', label: 'AI Plan Reader', icon: FileText },
     { id: 'live-session', label: 'Live Session', icon: Video },
     { id: 'quests', label: 'Quests & XP', icon: Trophy },
+    { id: 'friends-messages', label: 'Friends & Messages', icon: MessageSquare },
     { id: 'future-self', label: 'Future Self', icon: Mail },
     { id: 'clarity-hub', label: 'Clarity Hub', icon: Brain },
+    { id: 'body-scan', label: 'Body Scan', icon: Scan },
+    { id: 'echo-body', label: 'EchoBody', icon: Activity },
     { id: 'exercises', label: 'Exercises', icon: Dumbbell },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -58,9 +63,7 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
   const clinicianNavItems = [
     { id: 'clinician-dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'patients', label: 'Patients', icon: Users },
-    { id: 'clarity-hub', label: 'Clarity Hub', icon: Brain },
-    { id: 'exercises', label: 'Exercise Library', icon: Dumbbell },
-    { id: 'analytics', label: 'Analytics & AI', icon: BarChart3 },
+    { id: 'actuarial-insights', label: 'Actuarial Insights', icon: BarChart3 },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

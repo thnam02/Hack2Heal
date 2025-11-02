@@ -136,8 +136,10 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
                 <div className="space-y-2">
                   <Label htmlFor="name">Name</Label>
                   <Input 
-                    id="name" 
+                    id="name"
+                    name="name"
                     type="text" 
+                    autoComplete="name"
                     placeholder="Your name"
                     className="bg-white border-gray-200"
                     value={name}
@@ -150,8 +152,10 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input 
-                  id="email" 
-                  type="email" 
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete={isSignUp ? "username" : "email"}
                   placeholder="you@example.com"
                   className="bg-white border-gray-200"
                   value={email}
@@ -163,8 +167,10 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input 
-                  id="password" 
-                  type="password" 
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete={isSignUp ? "new-password" : "current-password"}
                   placeholder="••••••••"
                   className="bg-white border-gray-200"
                   value={password}
@@ -174,9 +180,9 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="role">I am a...</Label>
+                <Label htmlFor="role-select">I am a...</Label>
                 <Select value={role} onValueChange={(value: 'patient' | 'clinician') => setRole(value)}>
-                  <SelectTrigger className="bg-white border-gray-200">
+                  <SelectTrigger id="role-select" name="role" className="bg-white border-gray-200">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -255,9 +261,9 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
 
           <div className="space-y-6 py-4">
             <div className="space-y-2">
-              <Label>What are you recovering from?</Label>
+              <Label htmlFor="injury-type-select">What are you recovering from?</Label>
               <Select>
-                <SelectTrigger>
+                <SelectTrigger id="injury-type-select" name="injuryType">
                   <SelectValue placeholder="Select injury type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -273,15 +279,18 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
 
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <Label>Current Pain Level</Label>
+                <Label htmlFor="pain-level-slider">Current Pain Level</Label>
                 <span className="text-2xl font-semibold text-[#2C2E6F]">{painLevel[0]}/10</span>
               </div>
               <Slider 
+                id="pain-level-slider"
+                name="painLevel"
                 value={painLevel}
                 onValueChange={setPainLevel}
                 max={10}
                 step={1}
                 className="py-4"
+                aria-label="Current Pain Level"
               />
               <div className="flex justify-between text-xs text-gray-500">
                 <span>No pain</span>
@@ -290,9 +299,9 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
             </div>
 
             <div className="space-y-2">
-              <Label>Primary Goal</Label>
+              <Label htmlFor="primary-goal-select">Primary Goal</Label>
               <Select>
-                <SelectTrigger>
+                <SelectTrigger id="primary-goal-select" name="primaryGoal">
                   <SelectValue placeholder="What do you want to achieve?" />
                 </SelectTrigger>
                 <SelectContent>

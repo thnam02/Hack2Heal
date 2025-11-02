@@ -4,6 +4,7 @@ import { API_BASE_URL, STORAGE_KEYS } from '../config/constants';
 // Create axios instance
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30000, // 30 seconds timeout
   headers: {
     'Content-Type': 'application/json',
   },
@@ -16,6 +17,8 @@ api.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    
     return config;
   },
   (error: unknown) => {

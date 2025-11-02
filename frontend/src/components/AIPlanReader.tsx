@@ -97,43 +97,63 @@ export function AIPlanReader() {
             {/* Editable Parameters */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-white rounded-xl shadow-sm">
               <div className="space-y-3">
-                <Label>Weekly Frequency (sessions/week)</Label>
+                <Label htmlFor="weekly-frequency-slider">Weekly Frequency (sessions/week)</Label>
                 <div className="flex items-center gap-4">
                   <Slider 
+                    id="weekly-frequency-slider"
+                    name="weeklyFrequency"
                     value={frequency}
                     onValueChange={setFrequency}
                     max={7}
                     min={1}
                     step={1}
                     className="flex-1"
+                    aria-label="Weekly Frequency"
                   />
                   <Badge className="bg-[#2C2E6F]">{frequency[0]}x/week</Badge>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <Label>Intensity Level</Label>
+                <Label htmlFor="intensity-level-slider">Intensity Level</Label>
                 <div className="flex items-center gap-4">
                   <Slider 
+                    id="intensity-level-slider"
+                    name="intensityLevel"
                     value={intensity}
                     onValueChange={setIntensity}
                     max={10}
                     min={1}
                     step={1}
                     className="flex-1"
+                    aria-label="Intensity Level"
                   />
                   <Badge className="bg-[#4DD2C1]">{intensity[0]}/10</Badge>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Sets per Exercise</Label>
-                <Input type="number" defaultValue="3" className="bg-white" />
+                <Label htmlFor="sets-per-exercise">Sets per Exercise</Label>
+                <Input 
+                  id="sets-per-exercise"
+                  name="setsPerExercise"
+                  type="number"
+                  autoComplete="off"
+                  defaultValue="3" 
+                  className="bg-white" 
+                />
               </div>
 
               <div className="space-y-2">
-                <Label>Rest Days</Label>
-                <Input type="text" defaultValue="Sunday, Wednesday" className="bg-white" />
+                <Label htmlFor="rest-days">Rest Days</Label>
+                <Input 
+                  id="rest-days"
+                  name="restDays"
+                  type="text"
+                  autoComplete="off"
+                  defaultValue="Sunday, Wednesday" 
+                  className="bg-white" 
+                />
               </div>
             </div>
 

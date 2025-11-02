@@ -40,5 +40,10 @@ export const statsService = {
     });
     return response.data;
   },
+
+  async addXP(amount: number): Promise<UserStats> {
+    const response = await api.post<UserStats>('/stats/add-xp', { amount });
+    return response.data;
+  },
 };
 

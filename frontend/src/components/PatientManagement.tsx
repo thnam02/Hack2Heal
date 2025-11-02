@@ -116,8 +116,13 @@ export function PatientManagement() {
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="relative md:col-span-2">
+              <label htmlFor="search-patients" className="sr-only">Search by name or condition</label>
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <Input
+                id="search-patients"
+                name="searchPatients"
+                type="search"
+                autoComplete="off"
                 placeholder="Search by name or condition..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}

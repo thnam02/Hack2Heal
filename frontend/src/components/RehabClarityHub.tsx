@@ -225,8 +225,13 @@ export function RehabClarityHub({ userRole = 'patient' }: RehabClarityHubProps) 
       <Card className="border-0 shadow-lg">
         <CardContent className="p-6">
           <div className="relative">
+            <label htmlFor="search-clarity-hub" className="sr-only">Search any term</label>
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <Input
+              id="search-clarity-hub"
+              name="searchClarityHub"
+              type="search"
+              autoComplete="off"
               placeholder="Search any term (e.g., ROM, eccentric, stabilization)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}

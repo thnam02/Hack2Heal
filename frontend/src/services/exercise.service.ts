@@ -154,7 +154,7 @@ export const exerciseService = {
         });
       }
     } catch (error) {
-      console.error('Failed to load exercise progress:', error);
+      // Ignore load errors
     }
 
     // If no stored data, return all exercises with 0 progress (not baseExercise defaults)
@@ -283,7 +283,6 @@ export const exerciseService = {
 
       const baseExercise = defaultExercises.find(ex => ex.id === exerciseId);
       if (!baseExercise) {
-        console.error(`Exercise with id ${exerciseId} not found`);
         return null;
       }
 
@@ -302,9 +301,6 @@ export const exerciseService = {
         ? storedCompletedSessions 
         : 0; // Always start at 0 if no stored progress exists
 
-      const remainingBefore = baseExercise.totalSessions - currentCompletedSessions;
-      console.log(`📊 Current progress for ${baseExercise.name}: ${currentCompletedSessions}/${baseExercise.totalSessions} (${remainingBefore} remaining)`);
-
       // Increment completed sessions (but don't exceed total)
       const newCompletedSessions = Math.min(
         currentCompletedSessions + 1,
@@ -313,7 +309,6 @@ export const exerciseService = {
 
       // Don't update if already at max
       if (newCompletedSessions === currentCompletedSessions && currentCompletedSessions >= baseExercise.totalSessions) {
-        console.log(`⚠️ Exercise ${exerciseId} already has all sessions completed (${currentCompletedSessions}/${baseExercise.totalSessions})`);
         // Return the exercise with the CORRECT stored value, not baseExercise default
         // IMPORTANT: Don't spread baseExercise first because it has wrong default values
         // Create the exercise object directly with correct values from localStorage
@@ -331,8 +326,6 @@ export const exerciseService = {
           totalSessions: baseExercise.totalSessions,
           progress: progress,
         };
-        console.log(`   ✅ Returning exercise with: ${storedExercise.completedSessions}/${storedExercise.totalSessions} (stored value from localStorage)`);
-        console.log(`   ✅ Verification: currentCompletedSessions=${currentCompletedSessions}, baseExercise.completedSessions=${baseExercise.completedSessions}`);
         return storedExercise;
       }
 
@@ -355,7 +348,7 @@ export const exerciseService = {
         const verifyMap = JSON.parse(verifyStored);
         const verifyCompleted = verifyMap[exerciseId]?.completedSessions;
         if (verifyCompleted !== newCompletedSessions) {
-          console.error(`❌ ERROR: Failed to save completed sessions! Expected ${newCompletedSessions}, got ${verifyCompleted}`);
+          // Log error silently - save verification failed
         }
       }
 
@@ -374,15 +367,9 @@ export const exerciseService = {
         totalSessions: baseExercise.totalSessions,
         progress: newProgress,
       };
-
-      console.log(`✅ Exercise session completed: ${baseExercise.name}`);
-      console.log(`   Progress: ${currentCompletedSessions} → ${newCompletedSessions} of ${baseExercise.totalSessions}`);
-      console.log(`   Remaining sessions: ${remainingBefore} → ${remainingAfter} (decreased by 1)`);
-      console.log(`   Progress percentage: ${newProgress}%`);
       
       return updatedExercise;
     } catch (error) {
-      console.error('Failed to complete session:', error);
       return null;
     }
   },
