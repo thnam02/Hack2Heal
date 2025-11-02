@@ -39,8 +39,8 @@ export const StatsProvider: React.FC<StatsProviderProps> = ({ children }) => {
       setStats(userStats);
     } catch (error: unknown) {
       // Keep existing stats if backend is unavailable
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _err = error;
+      // Error is intentionally not used
+      void error;
     }
   };
 

@@ -24,7 +24,8 @@ interface Exercise {
 
 // Default exercises (initial template - now managed by exerciseService)
 // Removed unused constant for linting
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/*
 const _defaultExercises: Exercise[] = [
   {
     id: 'ex-001',
@@ -135,6 +136,7 @@ const _defaultExercises: Exercise[] = [
     totalSessions: 3,
   },
 ];
+*/
 
 const getLevelColor = (level: string) => {
   switch (level) {

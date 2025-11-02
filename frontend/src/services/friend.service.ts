@@ -155,7 +155,7 @@ export const friendService = {
     return response.data;
   },
 
-  async areFriends(userId1: number, userId2: number): Promise<boolean> {
+  async areFriends(_userId1: number, userId2: number): Promise<boolean> {
     const response = await api.get<boolean>(`/friends/check/${userId2}`);
     return response.data;
   },

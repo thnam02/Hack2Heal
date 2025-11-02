@@ -267,7 +267,7 @@ const CameraControls = forwardRef<CameraControlsRef>((_, ref) => {
 
   return (
     <OrbitControls
-      ref={controlsRef}
+      ref={controlsRef as any}
       enablePan={true}
       enableZoom={true}
       enableRotate={true}
