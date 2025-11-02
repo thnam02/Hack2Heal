@@ -454,7 +454,7 @@ export default function ActuarialInsights({
         <p>
           Powered by{" "}
           <span className="text-[#6F66FF]">
-            RehabQuest AI+ Predictive Core (v1.2)
+            RehabMax AI+ Predictive Core (v1.2)
           </span>{" "}
           — combining clinical, behavioural, and sensor data for
           actuarial recovery forecasting.

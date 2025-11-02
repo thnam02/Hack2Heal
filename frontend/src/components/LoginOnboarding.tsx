@@ -118,7 +118,7 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-[#2C2E6F] to-[#4DD2C1] rounded-2xl mb-4">
             <Activity className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-[#2C2E6F] mb-2">Welcome to RehabQuest AI+</h1>
+          <h1 className="text-[#2C2E6F] mb-2">Welcome to RehabMax AI+</h1>
           <p className="text-gray-600">Your AI coach that sees your form, senses your effort, and predicts your progress</p>
         </div>
 

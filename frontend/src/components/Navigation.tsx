@@ -91,7 +91,7 @@ export function Navigation({ currentPage, onPageChange, userRole }: NavigationPr
       } as React.CSSProperties}
     >
       <div className="p-6">
-        <h1 className="text-xl">RehabQuest AI+</h1>
+        <h1 className="text-xl">RehabMax AI+</h1>
         <p className="text-sm opacity-80 mt-1">{userRole === 'patient' ? 'Smart Recovery' : 'Clinic Portal'}</p>
       </div>
 

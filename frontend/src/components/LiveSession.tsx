@@ -722,7 +722,7 @@ export function LiveSession() {
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-[#1B1E3D]/60">
           <p>
-            All movements analyzed on-device for privacy. Powered by <span className="text-[#6F66FF]">RehabQuest AI+ Vision Coach</span>.
+            All movements analyzed on-device for privacy. Powered by <span className="text-[#6F66FF]">RehabMax AI+ Vision Coach</span>.
           </p>
         </div>
       </div>
