@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -6,6 +6,7 @@ import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Separator } from './ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   User, 
   Bell, 
@@ -18,10 +19,25 @@ import {
 } from 'lucide-react';
 
 export function Settings() {
+  const { user } = useAuth();
   const [darkMode, setDarkMode] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(true);
+
+  // Parse user name into first and last name
+  const { firstName, lastName, userInitial } = useMemo(() => {
+    if (!user?.name) {
+      return { firstName: '', lastName: '', userInitial: 'U' };
+    }
+    
+    const nameParts = user.name.trim().split(/\s+/);
+    const firstName = nameParts[0] || '';
+    const lastName = nameParts.slice(1).join(' ') || '';
+    const userInitial = firstName.charAt(0).toUpperCase() || 'U';
+    
+    return { firstName, lastName, userInitial };
+  }, [user?.name]);
 
   const connectedDevices = [
     { name: 'Apple Health', connected: true, icon: '🍎' },
@@ -66,7 +82,7 @@ export function Settings() {
             <CardContent className="space-y-6">
               <div className="flex items-center gap-6">
                 <div className="w-20 h-20 bg-gradient-to-br from-[#2C2E6F] to-[#4DD2C1] rounded-full flex items-center justify-center text-white text-2xl">
-                  R
+                  {userInitial}
                 </div>
                 <div>
                   <Button variant="outline" size="sm">Change Photo</Button>
@@ -78,22 +94,22 @@ export function Settings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" defaultValue="Rose" />
+                  <Input id="firstName" defaultValue={firstName} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" defaultValue="Martinez" />
+                  <Input id="lastName" defaultValue={lastName} />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue="rose.martinez@email.com" />
+                <Input id="email" type="email" defaultValue={user?.email || ''} />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="phone">Phone</Label>
-                <Input id="phone" type="tel" defaultValue="+1 (555) 123-4567" />
+                <Input id="phone" type="tel" placeholder="Enter your phone number" />
               </div>
 
               <Separator />

@@ -152,6 +152,7 @@ async function getLeaderboard(limit = 10) {
         ROW_NUMBER() OVER (ORDER BY us.totalXp DESC) as rank
       FROM user_stats us
       JOIN users u ON us.userId = u.id
+      WHERE u.role != 'clinician'
       ORDER BY us.totalXp DESC
       LIMIT ?`
     )

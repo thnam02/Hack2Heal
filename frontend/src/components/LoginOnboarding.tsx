@@ -1,6 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { authService } from '../services/auth.service';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -50,15 +51,47 @@ export function LoginOnboarding({ onLogin }: LoginOnboardingProps) {
           return;
         }
         await authRegister({ name, email, password, role });
+        
+        // After registration, use the registered role
+        if (role === 'patient') {
+          setShowBaseline(true);
+        } else {
+          handleBaselineComplete();
+        }
       } else {
+        // Login - check role matches
         await authLogin({ email, password });
-      }
+        
+        // Get the actual user role from localStorage (set by authService.login)
+        const currentUser = authService.getCurrentUser();
+        if (!currentUser) {
+          setError('Login failed. Please try again.');
+          setIsLoading(false);
+          return;
+        }
+        
+        const actualRole = currentUser.role;
+        const selectedRoleForLogin = role; // The role selected in UI dropdown
+        
+        // Validate that the selected role matches the user's actual role
+        // Map backend roles: 'clinician' -> 'clinician', 'patient' or 'user' -> 'patient'
+        const userActualRole = actualRole === 'clinician' ? 'clinician' : 'patient';
+        
+        if (userActualRole !== selectedRoleForLogin) {
+          setError(`You are registered as a ${userActualRole}. Please select "${userActualRole === 'clinician' ? 'Clinician' : 'Patient'}" to log in.`);
+          setIsLoading(false);
+          // Clear the auth state since role doesn't match
+          await authService.logout();
+          return;
+        }
 
-      // After successful auth, show baseline for patients
-      if (role === 'patient') {
-        setShowBaseline(true);
-      } else {
-        handleBaselineComplete();
+        // Role matches - proceed with login
+        // After successful auth, show baseline for patients
+        if (userActualRole === 'patient') {
+          setShowBaseline(true);
+        } else {
+          handleBaselineComplete();
+        }
       }
     } catch (err: unknown) {
       const errorMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;

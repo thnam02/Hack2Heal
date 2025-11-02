@@ -159,12 +159,16 @@ export function ExerciseLibrary() {
   useEffect(() => {
     const loadExercises = () => {
       const loadedExercises = exerciseService.getExercises();
-      console.log('📚 ExerciseLibrary: Loading exercises', loadedExercises.map(ex => `${ex.name}: ${ex.completedSessions}/${ex.totalSessions}`));
+      console.log('📚 ExerciseLibrary: Loading exercises', loadedExercises.map(ex => {
+        const remaining = ex.totalSessions - ex.completedSessions;
+        return `${ex.name}: ${remaining}/${ex.totalSessions} remaining`;
+      }));
       
       // Find the specific exercise to verify its state
       const wallPushUp = loadedExercises.find(ex => ex.id === 'ex-005');
       if (wallPushUp) {
-        console.log(`🔍 ExerciseLibrary: Wall Push-Up state: ${wallPushUp.completedSessions}/${wallPushUp.totalSessions} (from localStorage)`);
+        const remaining = wallPushUp.totalSessions - wallPushUp.completedSessions;
+        console.log(`🔍 ExerciseLibrary: Wall Push-Up state: ${remaining}/${wallPushUp.totalSessions} remaining (${wallPushUp.completedSessions} completed)`);
       }
       
       setExercises(loadedExercises);
@@ -201,7 +205,7 @@ export function ExerciseLibrary() {
         const loadedExercises = exerciseService.getExercises();
         const exercisesDetails = loadedExercises.map(ex => {
           const remaining = ex.totalSessions - ex.completedSessions;
-          return `${ex.name}: ${ex.completedSessions}/${ex.totalSessions} sessions (${remaining} remaining)`;
+          return `${ex.name}: ${remaining}/${ex.totalSessions} sessions remaining`;
         });
         console.log('📊 ExerciseLibrary: Loaded exercises after event:', exercisesDetails);
         console.log('📊 ExerciseLibrary: Setting exercises state...');
@@ -214,7 +218,8 @@ export function ExerciseLibrary() {
           const exerciseId = (e.detail as { exerciseId: string }).exerciseId;
           const updatedExercise = loadedExercises.find(ex => ex.id === exerciseId);
           if (updatedExercise) {
-            console.log(`🎯 ExerciseLibrary: Updated exercise ${exerciseId}: ${updatedExercise.completedSessions}/${updatedExercise.totalSessions} sessions`);
+            const remaining = updatedExercise.totalSessions - updatedExercise.completedSessions;
+            console.log(`🎯 ExerciseLibrary: Updated exercise ${exerciseId}: ${remaining}/${updatedExercise.totalSessions} remaining (${updatedExercise.completedSessions} completed)`);
           }
         }
       }, 150); // Slightly longer delay to ensure localStorage write is complete
@@ -347,9 +352,10 @@ export function ExerciseLibrary() {
                 <div className="pt-2">
                   <div className="flex items-center justify-between text-sm text-[#1B1E3D]/60 mb-2">
                     <span>Progress this week</span>
-                    <span>{exercise.completedSessions} of {exercise.totalSessions} sessions</span>
+                    <span>{exercise.totalSessions - exercise.completedSessions} of {exercise.totalSessions} sessions remaining</span>
                   </div>
-                  <Progress value={exercise.progress} className="h-2" />
+                  {/* Progress bar shows remaining work percentage (inverse of completion) */}
+                  <Progress value={100 - exercise.progress} className="h-2" />
                 </div>
 
                 {/* Action Button */}
