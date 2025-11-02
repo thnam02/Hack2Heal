@@ -10,7 +10,8 @@ RUN mkdir -p /node_modules && chown node:node -R /node_modules /app
 
 # Copy and install deps as non-root
 USER node
-COPY .env /app/.env
+# Note: .env file is not copied - environment variables should be set at runtime
+# COPY .env /app/.env
 COPY --chown=node:node package.json ./
 RUN npm install
 
