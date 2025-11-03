@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python dependencies as root (needed for system-wide packages)
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt && rm requirements.txt
+
 # Prepare writable dirs
 RUN mkdir -p /node_modules && chown node:node -R /node_modules /app
 
@@ -27,10 +31,6 @@ USER node
 # COPY .env /app/.env
 COPY --chown=node:node package.json ./
 RUN npm install
-
-# Install Python dependencies
-COPY --chown=node:node requirements.txt ./
-RUN pip3 install --user --no-cache-dir -r requirements.txt
 
 # Copy source
 COPY --chown=node:node . ./
