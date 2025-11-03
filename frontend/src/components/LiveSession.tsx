@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, RefreshCcw, Video, VideoOff, ArrowLeft, Trophy, CheckCircle, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Socket } from 'socket.io-client';
 import { API_BASE_URL } from '../config/constants';
 import { useStats } from '../contexts/StatsContext';
 import { exerciseService } from '../services/exercise.service';
@@ -74,8 +75,10 @@ export function LiveSession() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
 
-  const socketRef = useRef<any>(null);
+  const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const statusHandlerRef = useRef<((payload: StatusEvent) => void) | null>(null);
+  const metricsHandlerRef = useRef<((payload: Record<string, unknown>) => void) | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
 
@@ -284,12 +287,12 @@ export function LiveSession() {
             handleMetricsPayload(payload);
           };
 
+          // Store handlers in refs for cleanup
+          statusHandlerRef.current = handleStatus;
+          metricsHandlerRef.current = handleMetrics;
+
           socket.on('session:status', handleStatus);
           socket.on('session:metrics', handleMetrics);
-
-          // Store handlers for cleanup
-          socket._sessionStatusHandler = handleStatus;
-          socket._sessionMetricsHandler = handleMetrics;
 
           setMetrics({ ...DEFAULT_METRICS });
           setIsSessionActive(true);
@@ -309,14 +312,14 @@ export function LiveSession() {
     const sessionId = sessionIdRef.current;
 
     if (socket && sessionId) {
-      // Remove event listeners
-      if (socket._sessionStatusHandler) {
-        socket.off('session:status', socket._sessionStatusHandler);
-        delete socket._sessionStatusHandler;
+      // Remove event listeners using stored handlers from refs
+      if (statusHandlerRef.current) {
+        socket.off('session:status', statusHandlerRef.current);
+        statusHandlerRef.current = null;
       }
-      if (socket._sessionMetricsHandler) {
-        socket.off('session:metrics', socket._sessionMetricsHandler);
-        delete socket._sessionMetricsHandler;
+      if (metricsHandlerRef.current) {
+        socket.off('session:metrics', metricsHandlerRef.current);
+        metricsHandlerRef.current = null;
       }
 
       // Leave session room

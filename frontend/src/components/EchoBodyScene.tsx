@@ -267,6 +267,7 @@ const CameraControls = forwardRef<CameraControlsRef>((_, ref) => {
 
   return (
     <OrbitControls
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ref={controlsRef as any}
       enablePan={true}
       enableZoom={true}

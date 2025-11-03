@@ -24,7 +24,6 @@ interface Exercise {
 
 // Default exercises (initial template - now managed by exerciseService)
 // Removed unused constant for linting
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /*
 const _defaultExercises: Exercise[] = [
   {
