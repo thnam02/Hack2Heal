@@ -201,10 +201,17 @@ export function LiveSession() {
           index,
         }));
 
-      setDevices(videoInputs);
-      if (videoInputs.length) {
-        setSelectedDeviceId(videoInputs[0].deviceId);
-        setSelectedCameraIndex(String(videoInputs[0].index));
+      // Filter out devices with empty deviceId
+      const validDevices = videoInputs.filter((device) => device.deviceId && device.deviceId.trim() !== '');
+      setDevices(validDevices);
+      if (validDevices.length) {
+        const firstDevice = validDevices[0];
+        setSelectedDeviceId(firstDevice.deviceId || `device-${firstDevice.index}`);
+        setSelectedCameraIndex(String(firstDevice.index));
+      } else {
+        // No valid devices found
+        setSelectedDeviceId('');
+        setSelectedCameraIndex('0');
       }
     } catch (error) {
       // Ignore device enumeration errors
@@ -456,11 +463,14 @@ export function LiveSession() {
   };
 
   const deviceOptions = useMemo(() => {
-    return devices.map((device) => ({
-      value: device.deviceId,
-      label: `${device.label} (cv2 index ${device.index})`,
-      indexValue: String(device.index),
-    }));
+    // Filter out devices with empty deviceId and ensure value is never empty string
+    return devices
+      .filter((device) => device.deviceId && device.deviceId.trim() !== '')
+      .map((device) => ({
+        value: device.deviceId || `device-${device.index}`, // Fallback if somehow empty
+        label: `${device.label} (cv2 index ${device.index})`,
+        indexValue: String(device.index),
+      }));
   }, [devices]);
 
   // Calculate progress percentage (based on sets only)
@@ -604,12 +614,14 @@ export function LiveSession() {
               {/* Camera Controls */}
               <div className="grid gap-4 md:grid-cols-2 mt-4">
                 <Select
-                  value={selectedDeviceId}
+                  value={selectedDeviceId || undefined}
                   onValueChange={(value) => {
-                    setSelectedDeviceId(value);
-                    const option = deviceOptions.find((item) => item.value === value);
-                    if (option) {
-                      setSelectedCameraIndex(option.indexValue);
+                    if (value && value !== 'no-devices') {
+                      setSelectedDeviceId(value);
+                      const option = deviceOptions.find((item) => item.value === value);
+                      if (option) {
+                        setSelectedCameraIndex(option.indexValue);
+                      }
                     }
                   }}
                 >
@@ -617,11 +629,17 @@ export function LiveSession() {
                     <SelectValue placeholder="Select camera" />
                   </SelectTrigger>
                   <SelectContent>
-                    {deviceOptions.map((device) => (
-                      <SelectItem key={device.value} value={device.value}>
-                        {device.label}
+                    {deviceOptions.length > 0 ? (
+                      deviceOptions.map((device) => (
+                        <SelectItem key={device.value} value={device.value || `device-${device.indexValue}`}>
+                          {device.label}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="no-devices" disabled>
+                        No cameras available
                       </SelectItem>
-                    ))}
+                    )}
                   </SelectContent>
                 </Select>
 
