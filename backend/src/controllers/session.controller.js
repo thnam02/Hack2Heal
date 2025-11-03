@@ -2,42 +2,45 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../config/logger');
+const { getIO } = require('../socket/socket');
 
 const PYTHON_EXECUTABLE = process.env.PYTHON_EXECUTABLE || 'python3';
 const SCRIPT_PATH = path.join(__dirname, '../../../ai_engine/pose_tracker.py');
+
+// Store active sessions with their child processes for cleanup
+const activeSessions = new Map();
 
 const startSession = (req, res) => {
   const exercise = req.query.exercise || 'shoulder_rotation';
   const cameraSource = req.query.camera || process.env.CAMERA_SOURCE || '0';
 
-  res.set({
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-  res.flushHeaders();
-
-  const sendEvent = (event, payload) => {
-    res.write(`event: ${event}\n`);
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
+  // Generate unique session ID
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const io = getIO();
 
   // Check if Python script exists
   if (!fs.existsSync(SCRIPT_PATH)) {
     logger.error(`Python script not found at ${SCRIPT_PATH}`);
-    sendEvent('status', {
+    return res.status(500).json({
+      success: false,
       message: `Python pose tracker script not found at ${SCRIPT_PATH}. Please check backend setup.`,
-      level: 'error',
     });
-    res.end();
-    return;
   }
 
   const child = spawn(PYTHON_EXECUTABLE, [SCRIPT_PATH, exercise, cameraSource], {
     cwd: path.join(__dirname, '../../../'),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  logger.info(`pose tracker spawned (exercise=${exercise}, camera=${cameraSource}) pid=${child.pid}`);
+  
+  logger.info(`pose tracker spawned (session=${sessionId}, exercise=${exercise}, camera=${cameraSource}) pid=${child.pid}`);
+
+  // Store session for cleanup
+  activeSessions.set(sessionId, child);
+
+  // Send initial status
+  io.to(`session_${sessionId}`).emit('session:status', {
+    message: `Session started using camera source ${cameraSource}`,
+  });
 
   child.stdout.on('data', (chunk) => {
     const lines = chunk.toString().split('\n').filter(Boolean);
@@ -45,14 +48,18 @@ const startSession = (req, res) => {
       try {
         const payload = JSON.parse(line);
         if (payload.error) {
-          sendEvent('status', { message: payload.error, level: 'error', source: payload.source });
+          io.to(`session_${sessionId}`).emit('session:status', {
+            message: payload.error,
+            level: 'error',
+            source: payload.source,
+          });
           return;
         }
         if (payload.type === 'metrics' || Object.prototype.hasOwnProperty.call(payload, 'posture_score')) {
           logger.debug(`pose tracker metrics: ${line}`);
-          sendEvent('metrics', payload);
+          io.to(`session_${sessionId}`).emit('session:metrics', payload);
         } else {
-          sendEvent('status', payload);
+          io.to(`session_${sessionId}`).emit('session:status', payload);
         }
       } catch (error) {
         logger.warn('Failed to parse pose tracker output', { line, error });
@@ -65,9 +72,15 @@ const startSession = (req, res) => {
   });
 
   child.on('close', (code) => {
-    logger.info(`pose tracker exited with code ${code}`);
-    sendEvent('status', { message: 'Session ended', code });
-    res.end();
+    logger.info(`pose tracker exited with code ${code} for session ${sessionId}`);
+    io.to(`session_${sessionId}`).emit('session:status', {
+      message: 'Session ended',
+      code,
+    });
+    // Clean up session
+    activeSessions.delete(sessionId);
+    // Clean up room
+    io.socketsLeave(`session_${sessionId}`);
   });
 
   child.on('error', (error) => {
@@ -78,20 +91,49 @@ const startSession = (req, res) => {
     } else if (error.message) {
       errorMsg = `Error: ${error.message}`;
     }
-    sendEvent('status', { message: errorMsg, level: 'error' });
-    res.end();
+    io.to(`session_${sessionId}`).emit('session:status', {
+      message: errorMsg,
+      level: 'error',
+    });
+    activeSessions.delete(sessionId);
+    io.socketsLeave(`session_${sessionId}`);
   });
 
-  req.on('close', () => {
-    if (child.exitCode === null) {
-      child.kill('SIGTERM');
-      logger.info('pose tracker terminated due to client disconnect');
-    }
+  // Send response with session ID
+  res.json({
+    success: true,
+    sessionId,
+    message: `Session started using camera source ${cameraSource}`,
   });
+};
 
-  sendEvent('status', { message: `Session started using camera source ${cameraSource}` });
+const endSession = (req, res) => {
+  const { sessionId } = req.body;
+
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Session ID is required',
+    });
+  }
+
+  const child = activeSessions.get(sessionId);
+  if (child && child.exitCode === null) {
+    child.kill('SIGTERM');
+    activeSessions.delete(sessionId);
+    logger.info(`Session ${sessionId} terminated manually`);
+  }
+
+  const io = getIO();
+  io.socketsLeave(`session_${sessionId}`);
+
+  res.json({
+    success: true,
+    message: 'Session ended',
+  });
 };
 
 module.exports = {
   startSession,
+  endSession,
 };

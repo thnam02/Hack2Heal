@@ -44,6 +44,24 @@ const initializeSocket = (server) => {
     // Join user's own room for direct messaging
     socket.join(`user_${socket.userId}`);
 
+    // ========== LIVE SESSION ==========
+
+    // Join session room
+    socket.on('session:join', (data) => {
+      const { sessionId } = data;
+      if (sessionId) {
+        socket.join(`session_${sessionId}`);
+      }
+    });
+
+    // Leave session room
+    socket.on('session:leave', (data) => {
+      const { sessionId } = data;
+      if (sessionId) {
+        socket.leave(`session_${sessionId}`);
+      }
+    });
+
     // ========== FRIEND REQUESTS ==========
 
     // Send friend request

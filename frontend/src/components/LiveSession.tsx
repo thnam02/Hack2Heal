@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config/constants';
 import { useStats } from '../contexts/StatsContext';
 import { exerciseService } from '../services/exercise.service';
+import { socketService } from '../services/socket.service';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Progress } from './ui/progress';
@@ -73,7 +74,8 @@ export function LiveSession() {
   const [sessionComplete, setSessionComplete] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const socketRef = useRef<any>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
 
@@ -142,7 +144,7 @@ export function LiveSession() {
 
   useEffect(() => {
     return () => {
-      eventSourceRef.current?.close();
+      endSession();
       stopPreview();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -245,60 +247,95 @@ export function LiveSession() {
       return;
     }
 
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
+    // Clean up previous session
+    endSession();
 
+    // Connect to socket if not already connected
+    const socket = socketService.connect();
+    socketRef.current = socket;
+
+    // Make API call to start session
     const url = new URL(`${API_BASE_URL}/sessions/start`);
     url.searchParams.set('exercise', exerciseOption);
     url.searchParams.set('camera', selectedCameraIndex || '0');
 
-    const source = new EventSource(url.toString());
+    fetch(url.toString())
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.sessionId) {
+          sessionIdRef.current = data.sessionId;
 
-    source.addEventListener('status', (event) => {
-      const data = JSON.parse((event as MessageEvent<string>).data) as StatusEvent;
-      if (data.level === 'error') {
+          // Join session room
+          socket.emit('session:join', { sessionId: data.sessionId });
+
+          // Listen for session status
+          const handleStatus = (payload: StatusEvent) => {
+            if (payload.level === 'error') {
+              setIsSessionActive(false);
+              return;
+            }
+            if (payload.code !== undefined) {
+              setIsSessionActive(false);
+            }
+          };
+
+          // Listen for metrics
+          const handleMetrics = (payload: Record<string, unknown>) => {
+            handleMetricsPayload(payload);
+          };
+
+          socket.on('session:status', handleStatus);
+          socket.on('session:metrics', handleMetrics);
+
+          // Store handlers for cleanup
+          socket._sessionStatusHandler = handleStatus;
+          socket._sessionMetricsHandler = handleMetrics;
+
+          setMetrics({ ...DEFAULT_METRICS });
+          setIsSessionActive(true);
+        } else {
+          console.error('Failed to start session:', data);
+          setIsSessionActive(false);
+        }
+      })
+      .catch((error) => {
+        console.error('Error starting session:', error);
         setIsSessionActive(false);
-        return;
-      }
-      if (data.code !== undefined) {
-        setIsSessionActive(false);
-      }
-    });
-
-    source.addEventListener('metrics', (event) => {
-      const data = JSON.parse((event as MessageEvent<string>).data);
-      handleMetricsPayload(data);
-    });
-
-    const handleGenericEvent = (event: MessageEvent<string>) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'metrics' || Object.prototype.hasOwnProperty.call(data, 'posture_score')) {
-        handleMetricsPayload(data);
-        return;
-      }
-    };
-
-    source.addEventListener('message', (event) => handleGenericEvent(event as MessageEvent<string>));
-    source.onmessage = handleGenericEvent;
-
-    source.onerror = () => {
-      setIsSessionActive(false);
-      source.close();
-      eventSourceRef.current = null;
-    };
-
-    eventSourceRef.current = source;
-    setMetrics({ ...DEFAULT_METRICS });
-    setIsSessionActive(true);
+      });
   };
 
   const endSession = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    const socket = socketRef.current;
+    const sessionId = sessionIdRef.current;
+
+    if (socket && sessionId) {
+      // Remove event listeners
+      if (socket._sessionStatusHandler) {
+        socket.off('session:status', socket._sessionStatusHandler);
+        delete socket._sessionStatusHandler;
+      }
+      if (socket._sessionMetricsHandler) {
+        socket.off('session:metrics', socket._sessionMetricsHandler);
+        delete socket._sessionMetricsHandler;
+      }
+
+      // Leave session room
+      socket.emit('session:leave', { sessionId });
+
+      // Optionally call the end endpoint to clean up backend
+      fetch(`${API_BASE_URL}/sessions/end`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId }),
+      }).catch((error) => {
+        console.error('Error ending session:', error);
+      });
     }
+
+    sessionIdRef.current = null;
+    socketRef.current = null;
     setIsSessionActive(false);
   };
 
