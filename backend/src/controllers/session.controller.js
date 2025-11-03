@@ -35,14 +35,15 @@ function resolveScriptPath() {
   const triedPaths = possiblePaths.filter(Boolean);
 
   // Try each path
-  for (const tryPath of triedPaths) {
-    if (tryPath && fs.existsSync(tryPath)) {
-      logger.info(`Found Python script at: ${tryPath}`);
-      return {
-        scriptPath: path.resolve(tryPath),
-        triedPaths,
-      };
-    }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  const foundPath = triedPaths.find((tryPath) => tryPath && fs.existsSync(tryPath));
+
+  if (foundPath) {
+    logger.info(`Found Python script at: ${foundPath}`);
+    return {
+      scriptPath: path.resolve(foundPath),
+      triedPaths,
+    };
   }
 
   // Return the most likely path (absolute from cwd for Render)
@@ -67,15 +68,18 @@ const startSession = (req, res) => {
   const { scriptPath: SCRIPT_PATH, triedPaths } = resolveScriptPath();
 
   // Check if Python script exists
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   if (!fs.existsSync(SCRIPT_PATH)) {
     logger.error(`Python script not found at ${SCRIPT_PATH}`);
     logger.error(`Tried paths: ${triedPaths.join(', ')}`);
     logger.error(`Current working directory: ${process.cwd()}`);
     logger.error(`__dirname: ${__dirname}`);
-    
+
     return res.status(500).json({
       success: false,
-      message: `Python pose tracker script not found at ${SCRIPT_PATH}. Tried paths: ${triedPaths.join(', ')}. Current directory: ${process.cwd()}`,
+      message: `Python pose tracker script not found at ${SCRIPT_PATH}. Tried paths: ${triedPaths.join(
+        ', '
+      )}. Current directory: ${process.cwd()}`,
     });
   }
 
@@ -87,7 +91,7 @@ const startSession = (req, res) => {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  
+
   logger.info(`pose tracker spawned (session=${sessionId}, exercise=${exercise}, camera=${cameraSource}) pid=${child.pid}`);
 
   // Store session for cleanup
@@ -100,10 +104,15 @@ const startSession = (req, res) => {
 
   child.stdout.on('data', (chunk) => {
     const lines = chunk.toString().split('\n').filter(Boolean);
+    logger.info(`[Session ${sessionId}] Python stdout received: ${lines.length} line(s)`);
+
     lines.forEach((line) => {
       try {
         const payload = JSON.parse(line);
+        logger.info(`[Session ${sessionId}] Parsed payload:`, JSON.stringify(payload));
+
         if (payload.error) {
+          logger.error(`[Session ${sessionId}] Python error:`, payload.error);
           io.to(`session_${sessionId}`).emit('session:status', {
             message: payload.error,
             level: 'error',
@@ -111,20 +120,34 @@ const startSession = (req, res) => {
           });
           return;
         }
+
+        // Check if it's metrics payload
         if (payload.type === 'metrics' || Object.prototype.hasOwnProperty.call(payload, 'posture_score')) {
-          logger.debug(`pose tracker metrics: ${line}`);
+          logger.info(`[Session ${sessionId}] Emitting metrics:`, JSON.stringify(payload));
           io.to(`session_${sessionId}`).emit('session:metrics', payload);
         } else {
+          logger.debug(`[Session ${sessionId}] Emitting status:`, JSON.stringify(payload));
           io.to(`session_${sessionId}`).emit('session:status', payload);
         }
       } catch (error) {
-        logger.warn('Failed to parse pose tracker output', { line, error });
+        logger.warn(`[Session ${sessionId}] Failed to parse pose tracker output:`, {
+          line,
+          error: error.message,
+        });
+        // Log raw line for debugging
+        logger.debug(`[Session ${sessionId}] Raw Python output: ${line}`);
       }
     });
   });
 
   child.stderr.on('data', (chunk) => {
-    logger.warn(`pose_tracker stderr: ${chunk.toString()}`);
+    const errorOutput = chunk.toString();
+    logger.error(`[Session ${sessionId}] Python stderr:`, errorOutput);
+    // Emit error to frontend
+    io.to(`session_${sessionId}`).emit('session:status', {
+      message: `Python script error: ${errorOutput}`,
+      level: 'error',
+    });
   });
 
   child.on('close', (code) => {
@@ -190,9 +213,6 @@ const endSession = (req, res) => {
 };
 
 const checkPythonScript = (req, res) => {
-  const path = require('path');
-  const fs = require('fs');
-  
   const possiblePaths = [
     process.env.POSE_TRACKER_SCRIPT_PATH,
     path.join(process.cwd(), 'ai_engine', 'pose_tracker.py'),
@@ -203,22 +223,29 @@ const checkPythonScript = (req, res) => {
     path.resolve(__dirname, '..', '..', '..', 'ai_engine', 'pose_tracker.py'),
   ].filter(Boolean);
 
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const results = possiblePaths.map((p) => ({
     path: p,
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
     exists: fs.existsSync(p),
   }));
 
   const found = results.find((r) => r.exists);
 
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  const aiEnginePath = path.join(process.cwd(), 'ai_engine');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  const aiEngineExists = fs.existsSync(aiEnginePath);
+
   res.json({
     cwd: process.cwd(),
-    __dirname: __dirname,
+    __dirname,
     possiblePaths: results,
     found: found || null,
-    aiEngineDirExists: fs.existsSync(path.join(process.cwd(), 'ai_engine')),
-    aiEngineFiles: fs.existsSync(path.join(process.cwd(), 'ai_engine'))
-      ? fs.readdirSync(path.join(process.cwd(), 'ai_engine'))
-      : 'ai_engine directory does not exist',
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    aiEngineDirExists: aiEngineExists,
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    aiEngineFiles: aiEngineExists ? fs.readdirSync(aiEnginePath) : 'ai_engine directory does not exist',
   });
 };
 
