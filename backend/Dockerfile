@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install Python dependencies as root (needed for system-wide packages)
 COPY requirements.txt ./
-RUN pip3 install --no-cache-dir -r requirements.txt && rm requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r requirements.txt && rm requirements.txt
 
 # Prepare writable dirs
 RUN mkdir -p /node_modules && chown node:node -R /node_modules /app
