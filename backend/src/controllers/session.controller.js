@@ -5,7 +5,34 @@ const logger = require('../config/logger');
 const { getIO } = require('../socket/socket');
 
 const PYTHON_EXECUTABLE = process.env.PYTHON_EXECUTABLE || 'python3';
-const SCRIPT_PATH = path.join(__dirname, '../../../ai_engine/pose_tracker.py');
+
+// Resolve Python script path - try multiple locations
+function resolveScriptPath() {
+  // 1. Environment variable (highest priority - for custom deployments)
+  if (process.env.POSE_TRACKER_SCRIPT_PATH) {
+    const envPath = process.env.POSE_TRACKER_SCRIPT_PATH;
+    if (fs.existsSync(envPath)) {
+      return envPath;
+    }
+  }
+
+  // 2. In backend/ai_engine (if ai_engine was copied into backend)
+  const backendPath = path.join(__dirname, '../../ai_engine/pose_tracker.py');
+  if (fs.existsSync(backendPath)) {
+    return backendPath;
+  }
+
+  // 3. Relative to repo root (for local development)
+  const rootPath = path.join(__dirname, '../../../ai_engine/pose_tracker.py');
+  if (fs.existsSync(rootPath)) {
+    return rootPath;
+  }
+
+  // 4. Fallback to root path (will be checked later and return error)
+  return rootPath;
+}
+
+const SCRIPT_PATH = resolveScriptPath();
 
 // Store active sessions with their child processes for cleanup
 const activeSessions = new Map();
@@ -20,15 +47,30 @@ const startSession = (req, res) => {
 
   // Check if Python script exists
   if (!fs.existsSync(SCRIPT_PATH)) {
+    const possiblePaths = [
+      path.join(__dirname, '../../ai_engine/pose_tracker.py'),
+      path.join(__dirname, '../../../ai_engine/pose_tracker.py'),
+      process.env.POSE_TRACKER_SCRIPT_PATH,
+    ].filter(Boolean);
+
     logger.error(`Python script not found at ${SCRIPT_PATH}`);
+    logger.error(`Tried paths: ${possiblePaths.join(', ')}`);
+    logger.error(`Current working directory: ${process.cwd()}`);
+    logger.error(`__dirname: ${__dirname}`);
+    
     return res.status(500).json({
       success: false,
-      message: `Python pose tracker script not found at ${SCRIPT_PATH}. Please check backend setup.`,
+      message: `Python pose tracker script not found. Please ensure ai_engine/pose_tracker.py is available in the deployment. Tried: ${possiblePaths.join(', ')}`,
     });
   }
 
+  // Determine working directory - use backend root for deployment
+  const cwd = fs.existsSync(path.join(__dirname, '../../ai_engine'))
+    ? path.join(__dirname, '../..') // backend root
+    : path.join(__dirname, '../../../'); // repo root for local dev
+
   const child = spawn(PYTHON_EXECUTABLE, [SCRIPT_PATH, exercise, cameraSource], {
-    cwd: path.join(__dirname, '../../../'),
+    cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   
