@@ -149,6 +149,34 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
     let videoStream: MediaStream | null = null;
     let poseInstance: Pose | null = null;
     let cameraInstance: Camera | null = null;
+    const activeTimeouts: ReturnType<typeof setTimeout>[] = [];
+
+    // Helper to create timeout with cleanup tracking
+    const createTimeout = (fn: () => void, delay: number): ReturnType<typeof setTimeout> => {
+      const timeoutId = setTimeout(() => {
+        if (!cleanupCalled) {
+          fn();
+        }
+        // Remove from tracking array when executed
+        const index = activeTimeouts.indexOf(timeoutId);
+        if (index > -1) {
+          activeTimeouts.splice(index, 1);
+        }
+      }, delay);
+      activeTimeouts.push(timeoutId);
+      return timeoutId;
+    };
+
+    // Helper to clear timeout with tracking
+    const clearTrackedTimeout = (timeoutId: ReturnType<typeof setTimeout> | null) => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        const index = activeTimeouts.indexOf(timeoutId);
+        if (index > -1) {
+          activeTimeouts.splice(index, 1);
+        }
+      }
+    };
 
     const initializePose = async () => {
       try {
@@ -192,7 +220,14 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
               oldStream.getTracks().forEach(track => track.stop());
               video.srcObject = null;
               // Wait a bit for cleanup
-              await new Promise(resolve => setTimeout(resolve, 100));
+              await new Promise<void>((resolve) => {
+                createTimeout(() => {
+                  if (!cleanupCalled) {
+                    resolve();
+                  }
+                }, 100);
+                // Timeout will be tracked and cleaned up
+              });
             }
             
             // Set new stream
@@ -201,32 +236,55 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
             // Wait for video to be ready - don't call play() manually
             // Let autoplay handle it, just wait for the stream to be active
             await new Promise<void>((resolve, reject) => {
-              const timeout = setTimeout(() => {
-                reject(new Error('Video loading timeout'));
-              }, 5000); // 5 second timeout
+              if (cleanupCalled) {
+                reject(new Error('Component unmounted'));
+                return;
+              }
+
+              const timeout = createTimeout(() => {
+                if (!cleanupCalled) {
+                  video.removeEventListener('loadedmetadata', onLoadedMetadata);
+                  video.removeEventListener('playing', onPlaying);
+                  video.removeEventListener('error', onError);
+                  reject(new Error('Video loading timeout'));
+                }
+              }, 5000);
 
               // Check if video tracks are already active
               const videoTrack = stream.getVideoTracks()[0];
               if (videoTrack && videoTrack.readyState === 'live') {
-                clearTimeout(timeout);
-                // Stream is live, resolve after a short delay to ensure video element is ready
-                setTimeout(() => resolve(), 200);
+                clearTrackedTimeout(timeout);
+                if (!cleanupCalled) {
+                  // Stream is live, resolve after a short delay to ensure video element is ready
+                  createTimeout(() => {
+                    if (!cleanupCalled) {
+                      resolve();
+                    }
+                  }, 200);
+                  // Will be cleaned up in cleanup function
+                }
                 return;
               }
 
               const onLoadedMetadata = () => {
-                clearTimeout(timeout);
+                if (cleanupCalled) return;
+                clearTrackedTimeout(timeout);
                 video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 video.removeEventListener('playing', onPlaying);
                 video.removeEventListener('error', onError);
                 
                 // Don't call play() here - let autoplay handle it
                 // Just wait for the playing event or resolve if autoplay works
-                setTimeout(() => resolve(), 100);
+                createTimeout(() => {
+                  if (!cleanupCalled) {
+                    resolve();
+                  }
+                }, 100);
               };
 
               const onPlaying = () => {
-                clearTimeout(timeout);
+                if (cleanupCalled) return;
+                clearTrackedTimeout(timeout);
                 video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 video.removeEventListener('playing', onPlaying);
                 video.removeEventListener('error', onError);
@@ -234,7 +292,8 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
               };
 
               const onError = (error: Event) => {
-                clearTimeout(timeout);
+                if (cleanupCalled) return;
+                clearTrackedTimeout(timeout);
                 video.removeEventListener('loadedmetadata', onLoadedMetadata);
                 video.removeEventListener('playing', onPlaying);
                 video.removeEventListener('error', onError);
@@ -243,7 +302,11 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
 
               // Wait for metadata
               if (video.readyState >= 1) { // HAVE_METADATA or higher
-                setTimeout(() => onLoadedMetadata(), 100);
+                createTimeout(() => {
+                  if (!cleanupCalled) {
+                    onLoadedMetadata();
+                  }
+                }, 100);
               } else {
                 video.addEventListener('loadedmetadata', onLoadedMetadata, { once: true });
               }
@@ -257,7 +320,14 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
             let attempts = 0;
             const maxAttempts = 50;
             while ((!video.videoWidth || !video.videoHeight) && attempts < maxAttempts && !cleanupCalled) {
-              await new Promise(resolve => setTimeout(resolve, 100));
+              await new Promise<void>((resolve) => {
+                createTimeout(() => {
+                  if (!cleanupCalled) {
+                    resolve();
+                  }
+                }, 100);
+                // Timeout will be cleaned up automatically
+              });
               attempts++;
               
               // Check if video element is still valid
@@ -319,7 +389,7 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
               } else {
                 // Scan complete
                 scanSoundRef.current?.fade(0.5, 0, 500);
-                setTimeout(() => {
+                createTimeout(() => {
                   if (!cleanupCalled) {
                     onScanComplete();
                   }
@@ -377,6 +447,12 @@ export function CameraScanEffect({ onScanComplete, onError }: CameraScanEffectPr
     return () => {
       cleanupCalled = true;
       isInitializedRef.current = false;
+      
+      // Clear all active timeouts
+      activeTimeouts.forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      activeTimeouts.length = 0;
       
       // Stop animation
       if (animationFrameRef.current) {

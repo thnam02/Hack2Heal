@@ -65,8 +65,72 @@ function clearConversationsCache(): void {
     localStorage.removeItem(CACHE_KEY);
     localStorage.removeItem(CACHE_TIMESTAMP_KEY);
   } catch (error) {
-    // Ignore errors
+    // Log error in development
+    if (import.meta.env.DEV) {
+      console.warn('[messageService] Error clearing cache:', error);
+    }
   }
+}
+
+// Helper function to create a Promise with timeout cleanup
+function createSocketPromiseWithTimeout<T>(
+  socket: ReturnType<typeof socketService.getSocket>,
+  emitEvent: string,
+  emitData: unknown,
+  successEvent: string,
+  errorEvent: string,
+  timeoutMs = 10000
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error('Socket not available'));
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let resolved = false;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const handleSuccess = (data: T) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      socket.off(successEvent, handleSuccess);
+      socket.off(errorEvent, handleError);
+      resolve(data);
+    };
+
+    const handleError = (error: { message?: string }) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      socket.off(successEvent, handleSuccess);
+      socket.off(errorEvent, handleError);
+      reject(new Error(error.message || 'Request failed'));
+    };
+
+    // Set timeout
+    timeoutId = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      socket.off(successEvent, handleSuccess);
+      socket.off(errorEvent, handleError);
+      reject(new Error('Request timeout'));
+    }, timeoutMs);
+
+    // Register event listeners
+    socket.once(successEvent, handleSuccess);
+    socket.once(errorEvent, handleError);
+
+    // Emit request
+    socket.emit(emitEvent, emitData);
+  });
 }
 
 export const messageService = {
@@ -76,21 +140,14 @@ export const messageService = {
     let message: Message;
     
     if (socket?.connected) {
-      message = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('message:send', { toUserId, content });
-        
-        socket.once('message:sent', (msg) => {
-          clearTimeout(timeout);
-          resolve(msg);
-        });
-        
-        socket.once('message:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to send message'));
-        });
-      });
+      message = await createSocketPromiseWithTimeout<Message>(
+        socket,
+        'message:send',
+        { toUserId, content },
+        'message:sent',
+        'message:error',
+        10000
+      );
     } else {
       const response = await api.post<Message>('/messages/send', { toUserId, content });
       message = response.data;
@@ -106,7 +163,9 @@ export const messageService = {
   async getConversations(useCache = true): Promise<Conversation[]> {
     // Prevent multiple simultaneous calls
     if (syncInProgress) {
-      console.log('[messageService.getConversations] Request already in progress, returning cache...');
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getConversations] Request already in progress, returning cache...');
+      }
       const cached = getCachedConversations();
       if (cached) {
         return cached;
@@ -123,20 +182,28 @@ export const messageService = {
     // Helper function to sync conversations in background (only once at a time)
     const syncInBackground = async () => {
       if (syncInProgress) {
-        console.log('[messageService.getConversations] Sync already in progress, skipping');
+        if (import.meta.env.DEV) {
+          console.log('[messageService.getConversations] Sync already in progress, skipping');
+        }
         return;
       }
       syncInProgress = true;
       try {
-        console.log('[messageService.getConversations] Syncing conversations in background...');
+        if (import.meta.env.DEV) {
+          console.log('[messageService.getConversations] Syncing conversations in background...');
+        }
         const response = await api.get<Conversation[]>('/messages/conversations');
         const conversations = response.data || [];
         if (useCache) {
           setCachedConversations(conversations);
         }
-        console.log('[messageService.getConversations] Background sync completed:', conversations.length, 'conversations');
+        if (import.meta.env.DEV) {
+          console.log('[messageService.getConversations] Background sync completed:', conversations.length, 'conversations');
+        }
       } catch (error) {
-        console.error('[messageService.getConversations] Background sync failed:', error);
+        if (import.meta.env.DEV) {
+          console.error('[messageService.getConversations] Background sync failed:', error);
+        }
         // Silently fail - cache will be used if available
       } finally {
         syncInProgress = false;
@@ -147,22 +214,30 @@ export const messageService = {
     if (useCache) {
       const cached = getCachedConversations();
       if (cached && cached.length > 0) {
-        console.log('[messageService.getConversations] Using cache, found', cached.length, 'conversations');
+        if (import.meta.env.DEV) {
+          console.log('[messageService.getConversations] Using cache, found', cached.length, 'conversations');
+        }
         // Return cached data immediately, then sync in background (only if not already syncing)
         if (!syncInProgress) {
           syncInBackground(); // Fire and forget
         }
         return cached;
       }
-      console.log('[messageService.getConversations] No cache found, fetching from API');
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getConversations] No cache found, fetching from API');
+      }
     }
 
     // Step 2: Fetch from backend (REST API only, NO WebSocket fallback to prevent loops)
     syncInProgress = true;
     try {
-      console.log('[messageService.getConversations] Fetching from REST API...');
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getConversations] Fetching from REST API...');
+      }
       const response = await api.get<Conversation[]>('/messages/conversations');
-      console.log('[messageService.getConversations] REST API response:', response.status, response.data?.length || 0, 'conversations');
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getConversations] REST API response:', response.status, response.data?.length || 0, 'conversations');
+      }
       const conversations = response.data || [];
       
       // Save to cache after successful fetch
@@ -172,12 +247,16 @@ export const messageService = {
       
       return conversations;
     } catch (restError) {
-      console.error('[messageService.getConversations] REST API failed:', restError);
+      if (import.meta.env.DEV) {
+        console.error('[messageService.getConversations] REST API failed:', restError);
+      }
       
       // If REST fails, try cache as last resort (NO WebSocket to prevent loops)
       const cached = getCachedConversations();
       if (cached && cached.length > 0) {
-        console.log('[messageService.getConversations] Using expired cache as fallback');
+        if (import.meta.env.DEV) {
+          console.log('[messageService.getConversations] Using expired cache as fallback');
+        }
         return cached;
       }
       
@@ -188,43 +267,46 @@ export const messageService = {
   },
 
   async getMessages(withUserId: number, limit = 50): Promise<Message[]> {
-    console.log('[messageService.getMessages] Getting messages for userId:', withUserId, 'limit:', limit);
+    if (import.meta.env.DEV) {
+      console.log('[messageService.getMessages] Getting messages for userId:', withUserId, 'limit:', limit);
+    }
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      console.log('[messageService.getMessages] Using WebSocket');
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          console.error('[messageService.getMessages] WebSocket request timeout');
-          reject(new Error('Request timeout'));
-        }, 10000);
-        
-        socket.emit('message:get_messages', { withUserId, limit });
-        console.log('[messageService.getMessages] Emitted message:get_messages');
-        
-        socket.once('message:messages', (data: { withUserId: number; messages: Message[] }) => {
-          clearTimeout(timeout);
-          console.log('[messageService.getMessages] Received messages via WebSocket:', data.messages?.length || 0);
-          resolve(data.messages || []);
-        });
-        
-        socket.once('message:error', (error) => {
-          clearTimeout(timeout);
-          console.error('[messageService.getMessages] WebSocket error:', error);
-          reject(new Error(error.message || 'Failed to get messages'));
-        });
-      });
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getMessages] Using WebSocket');
+      }
+      const result = await createSocketPromiseWithTimeout<{ withUserId: number; messages: Message[] }>(
+        socket,
+        'message:get_messages',
+        { withUserId, limit },
+        'message:messages',
+        'message:error',
+        10000
+      );
+      
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getMessages] Received messages via WebSocket:', result.messages?.length || 0);
+      }
+      
+      return result.messages || [];
     }
     
-    console.log('[messageService.getMessages] Using REST API');
+    if (import.meta.env.DEV) {
+      console.log('[messageService.getMessages] Using REST API');
+    }
     try {
       const response = await api.get<Message[]>(`/messages/conversation/${withUserId}`, {
         params: { limit },
       });
-      console.log('[messageService.getMessages] REST API response:', response.status, response.data?.length || 0, 'messages');
+      if (import.meta.env.DEV) {
+        console.log('[messageService.getMessages] REST API response:', response.status, response.data?.length || 0, 'messages');
+      }
       return response.data || [];
     } catch (error: unknown) {
-      console.error('[messageService.getMessages] REST API error:', error);
+      if (import.meta.env.DEV) {
+        console.error('[messageService.getMessages] REST API error:', error);
+      }
       throw error;
     }
   },
@@ -233,48 +315,34 @@ export const messageService = {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('message:mark_read', { messageId });
-        
-        socket.once('message:read', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        
-        socket.once('message:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to mark message as read'));
-        });
-      });
+      await createSocketPromiseWithTimeout<void>(
+        socket,
+        'message:mark_read',
+        { messageId },
+        'message:read',
+        'message:error',
+        10000
+      );
+    } else {
+      await api.post(`/messages/read/${messageId}`);
     }
-    
-    await api.post(`/messages/read/${messageId}`);
   },
 
   async markConversationAsRead(userId: number): Promise<void> {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('message:mark_conversation_read', { withUserId: userId });
-        
-        socket.once('message:conversation_read', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        
-        socket.once('message:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to mark conversation as read'));
-        });
-      });
+      await createSocketPromiseWithTimeout<void>(
+        socket,
+        'message:mark_conversation_read',
+        { withUserId: userId },
+        'message:conversation_read',
+        'message:error',
+        10000
+      );
+    } else {
+      await api.post(`/messages/conversation/${userId}/read`);
     }
-    
-    await api.post(`/messages/conversation/${userId}/read`);
   },
 
   // Subscribe to real-time message updates

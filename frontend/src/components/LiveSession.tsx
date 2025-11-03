@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Square, RefreshCcw, Video, VideoOff, ArrowLeft, Trophy, CheckCircle, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Socket } from 'socket.io-client';
-import { API_BASE_URL } from '../config/constants';
+import { Pose, Results } from '@mediapipe/pose';
+import { Camera } from '@mediapipe/camera_utils';
 import { useStats } from '../contexts/StatsContext';
 import { exerciseService } from '../services/exercise.service';
 import { socketService } from '../services/socket.service';
@@ -80,7 +81,17 @@ export function LiveSession() {
   const statusHandlerRef = useRef<((payload: StatusEvent) => void) | null>(null);
   const metricsHandlerRef = useRef<((payload: Record<string, unknown>) => void) | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const poseRef = useRef<Pose | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
+  
+  // Pose analysis state
+  const prevAnglesRef = useRef<number[]>([]);
+  const baselineAngleRef = useRef<number | null>(null);
+  const directionRef = useRef<'up' | 'down' | null>(null);
+  const repsRef = useRef<number>(0);
+  const baselineCalibrationFramesRef = useRef<number[]>([]); // Collect frames for baseline calibration
+  const baselineCalibratedRef = useRef<boolean>(false);
 
   // Check for exercise from ExerciseLibrary on mount
   useEffect(() => {
@@ -132,9 +143,380 @@ export function LiveSession() {
     }
   }, []);
 
-  const handleMetricsPayload = useCallback((payload: Record<string, unknown>) => {
+  // Calculate angle between three points (in degrees)
+  const calculateAngle = useCallback((a: [number, number], b: [number, number], c: [number, number]): number => {
+    const vec1 = [a[0] - b[0], a[1] - b[1]];
+    const vec2 = [c[0] - b[0], c[1] - b[1]];
+    
+    const dot = vec1[0] * vec2[0] + vec1[1] * vec2[1];
+    const mag1 = Math.sqrt(vec1[0] * vec1[0] + vec1[1] * vec1[1]);
+    const mag2 = Math.sqrt(vec2[0] * vec2[0] + vec2[1] * vec2[1]);
+    
+    const cosAngle = Math.max(-1, Math.min(1, dot / (mag1 * mag2)));
+    return Math.acos(cosAngle) * (180 / Math.PI);
+  }, []);
+
+  // Analyze pose and return metrics
+  const analyzePose = useCallback((results: Results, exerciseType: ExerciseOption) => {
+    const landmarks = results.poseLandmarks;
+    
+    if (!landmarks || landmarks.length === 0) {
+      // Return null to indicate no valid data (don't update metrics)
+      return null;
+    }
+
+    // MediaPipe Pose landmarks indices
+    const LEFT_SHOULDER = 11;
+    const LEFT_ELBOW = 13;
+    const LEFT_WRIST = 15;
+    const RIGHT_SHOULDER = 12;
+    const RIGHT_ELBOW = 14;
+    const RIGHT_WRIST = 16;
+    const LEFT_HIP = 23;
+    const LEFT_KNEE = 25;
+    const LEFT_ANKLE = 27;
+
+    let angle = 0;
+    let hasValidLandmarks = false;
+
+    if (exerciseType === 'shoulder_rotation') {
+      // Check both arms and use the one with better visibility and movement
+      const leftShoulder = landmarks[LEFT_SHOULDER];
+      const leftElbow = landmarks[LEFT_ELBOW];
+      const leftWrist = landmarks[LEFT_WRIST];
+      const rightShoulder = landmarks[RIGHT_SHOULDER];
+      const rightElbow = landmarks[RIGHT_ELBOW];
+      const rightWrist = landmarks[RIGHT_WRIST];
+      
+      let leftValid = false;
+      let rightValid = false;
+      let leftAngle = 0;
+      let rightAngle = 0;
+      
+      // Check left arm
+      if (leftShoulder && leftElbow && leftWrist && 
+          (leftShoulder.visibility ?? 1) > 0.5 && 
+          (leftElbow.visibility ?? 1) > 0.5 && 
+          (leftWrist.visibility ?? 1) > 0.5) {
+        leftAngle = calculateAngle(
+          [leftShoulder.x, leftShoulder.y],
+          [leftElbow.x, leftElbow.y],
+          [leftWrist.x, leftWrist.y]
+        );
+        leftValid = leftAngle > 0;
+      }
+      
+      // Check right arm
+      if (rightShoulder && rightElbow && rightWrist && 
+          (rightShoulder.visibility ?? 1) > 0.5 && 
+          (rightElbow.visibility ?? 1) > 0.5 && 
+          (rightWrist.visibility ?? 1) > 0.5) {
+        rightAngle = calculateAngle(
+          [rightShoulder.x, rightShoulder.y],
+          [rightElbow.x, rightElbow.y],
+          [rightWrist.x, rightWrist.y]
+        );
+        rightValid = rightAngle > 0;
+      }
+      
+      // Choose the arm that is actively performing the exercise
+      // Priority: arm with more movement (smaller angle = arm raised higher)
+      if (leftValid && rightValid) {
+        // If baseline is set, check which arm has more range of motion
+        if (baselineAngleRef.current !== null) {
+          const leftRange = baselineAngleRef.current - leftAngle;
+          const rightRange = baselineAngleRef.current - rightAngle;
+          
+          // Use the arm with larger positive range (arm raised higher)
+          // Or if both are raising, use the one with better visibility
+          if (leftRange > 0 && rightRange > 0) {
+            // Both arms are raised - use the one with larger range
+            if (leftRange >= rightRange) {
+              angle = leftAngle;
+              hasValidLandmarks = true;
+            } else {
+              angle = rightAngle;
+              hasValidLandmarks = true;
+            }
+          } else if (leftRange > 0) {
+            // Only left arm is raised
+            angle = leftAngle;
+            hasValidLandmarks = true;
+          } else if (rightRange > 0) {
+            // Only right arm is raised
+            angle = rightAngle;
+            hasValidLandmarks = true;
+          } else {
+            // Neither arm is raised - use the one with better visibility
+            const leftAvgVisibility = ((leftShoulder.visibility ?? 0) + (leftElbow.visibility ?? 0) + (leftWrist.visibility ?? 0)) / 3;
+            const rightAvgVisibility = ((rightShoulder.visibility ?? 0) + (rightElbow.visibility ?? 0) + (rightWrist.visibility ?? 0)) / 3;
+            
+            if (leftAvgVisibility >= rightAvgVisibility) {
+              angle = leftAngle;
+              hasValidLandmarks = true;
+            } else {
+              angle = rightAngle;
+              hasValidLandmarks = true;
+            }
+          }
+        } else {
+          // Baseline not set yet - use the arm with better visibility
+          const leftAvgVisibility = ((leftShoulder.visibility ?? 0) + (leftElbow.visibility ?? 0) + (leftWrist.visibility ?? 0)) / 3;
+          const rightAvgVisibility = ((rightShoulder.visibility ?? 0) + (rightElbow.visibility ?? 0) + (rightWrist.visibility ?? 0)) / 3;
+          
+          if (leftAvgVisibility >= rightAvgVisibility) {
+            angle = leftAngle;
+            hasValidLandmarks = true;
+          } else {
+            angle = rightAngle;
+            hasValidLandmarks = true;
+          }
+        }
+      } else if (leftValid) {
+        angle = leftAngle;
+        hasValidLandmarks = true;
+      } else if (rightValid) {
+        angle = rightAngle;
+        hasValidLandmarks = true;
+      }
+    } else if (exerciseType === 'squat') {
+      const hip = landmarks[LEFT_HIP];
+      const knee = landmarks[LEFT_KNEE];
+      const ankle = landmarks[LEFT_ANKLE];
+      
+      // Check if landmarks have valid visibility
+      if (hip && knee && ankle && 
+          (hip.visibility ?? 1) > 0.5 && 
+          (knee.visibility ?? 1) > 0.5 && 
+          (ankle.visibility ?? 1) > 0.5) {
+        angle = calculateAngle(
+          [hip.x, hip.y],
+          [knee.x, knee.y],
+          [ankle.x, ankle.y]
+        );
+        hasValidLandmarks = angle > 0;
+      }
+    }
+
+    // If no valid landmarks, don't update metrics
+    if (!hasValidLandmarks) {
+      return null;
+    }
+
+    // Baseline calibration: collect first 15 frames to determine stable rest position
+    const BASELINE_CALIBRATION_FRAMES = 15;
+    
+    if (!baselineCalibratedRef.current && angle > 0) {
+      baselineCalibrationFramesRef.current.push(angle);
+      
+      // Once we have enough frames, calculate baseline as average (more stable)
+      if (baselineCalibrationFramesRef.current.length >= BASELINE_CALIBRATION_FRAMES) {
+        const baselineFrames = baselineCalibrationFramesRef.current;
+        const baselineSum = baselineFrames.reduce((sum, a) => sum + a, 0);
+        const baselineAvg = baselineSum / baselineFrames.length;
+        
+        // Validate baseline is reasonable for exercise type
+        let isValidBaseline = true;
+        if (exerciseType === 'shoulder_rotation') {
+          // Shoulder rotation rest position: angle should be 140-180° (arm down)
+          isValidBaseline = baselineAvg >= 140 && baselineAvg <= 180;
+        } else if (exerciseType === 'squat') {
+          // Squat standing position: angle should be 160-180° (straight leg)
+          isValidBaseline = baselineAvg >= 160 && baselineAvg <= 180;
+        }
+        
+        if (isValidBaseline) {
+          baselineAngleRef.current = baselineAvg;
+          baselineCalibratedRef.current = true;
+        } else {
+          // If baseline is invalid, use current angle as fallback but mark as calibrated
+          baselineAngleRef.current = baselineAvg;
+          baselineCalibratedRef.current = true;
+        }
+        
+        // Clear calibration frames
+        baselineCalibrationFramesRef.current = [];
+      }
+    }
+
+    // If baseline not calibrated yet, don't process scoring (wait for calibration)
+    if (!baselineCalibratedRef.current || baselineAngleRef.current === null) {
+      return null;
+    }
+
+    // Temporal smoothing
+    prevAnglesRef.current.push(angle);
+    if (prevAnglesRef.current.length > 5) {
+      prevAnglesRef.current.shift();
+    }
+    const smoothAngle = prevAnglesRef.current.reduce((sum, a) => sum + a, 0) / prevAnglesRef.current.length;
+
+    // Rep counting: improved logic for each exercise type
+    if (exerciseType === 'shoulder_rotation') {
+      // For shoulder rotation:
+      // - 'down' = arm raised (angle < baseline, performing exercise)
+      // - 'up' = arm lowered (angle > baseline, returning to rest)
+      // Rep counted when returning from raised to rest position
+      if (directionRef.current === null) {
+        directionRef.current = smoothAngle < baselineAngleRef.current ? 'down' : 'up';
+      } else {
+        const rangeOfMotion = baselineAngleRef.current - smoothAngle;
+        const REP_THRESHOLD = 20; // Minimum range to count as performing exercise
+        
+        if (directionRef.current === 'down' && smoothAngle >= baselineAngleRef.current) {
+          // Transitioned from performing exercise back to rest = 1 rep
+          repsRef.current += 1;
+          directionRef.current = 'up';
+        } else if (directionRef.current === 'up' && rangeOfMotion >= REP_THRESHOLD) {
+          // Started performing exercise (arm raised enough)
+          directionRef.current = 'down';
+        }
+      }
+    } else if (exerciseType === 'squat') {
+      // For squat:
+      // - 'down' = squatting (angle < baseline, performing exercise)
+      // - 'up' = standing (angle > baseline, returning to rest)
+      // Rep counted when returning from squat to standing
+      if (directionRef.current === null) {
+        directionRef.current = smoothAngle < baselineAngleRef.current ? 'down' : 'up';
+      } else {
+        const rangeOfMotion = baselineAngleRef.current - smoothAngle;
+        const REP_THRESHOLD = 30; // Minimum range to count as performing exercise (deeper squat)
+        
+        if (directionRef.current === 'down' && smoothAngle >= baselineAngleRef.current) {
+          // Transitioned from squatting back to standing = 1 rep
+          repsRef.current += 1;
+          directionRef.current = 'up';
+        } else if (directionRef.current === 'up' && rangeOfMotion >= REP_THRESHOLD) {
+          // Started squatting (deep enough)
+          directionRef.current = 'down';
+        }
+      }
+    }
+
+    // Scoring based on exercise type and range of motion
+    let postureScore = 0;
+    let alignment = 'Off';
+    let rangeOfMotion = 0;
+    
+    if (exerciseType === 'shoulder_rotation') {
+      // For shoulder rotation:
+      // Baseline = rest position (tay xuôi, angle lớn ~160-180°)
+      // Good form = giơ tay lên (angle giảm ~90-120°)
+      // Range of motion = baseline - currentAngle (positive when raising arm)
+      rangeOfMotion = baselineAngleRef.current - smoothAngle;
+      
+      // Validate range is reasonable for shoulder rotation (0-80°)
+      const MAX_RANGE = 80;
+      if (rangeOfMotion < 0 || rangeOfMotion > MAX_RANGE) {
+        // Invalid range - might be measurement error
+        postureScore = 0;
+        alignment = 'Off';
+      } else {
+        // Score is high when raising arm (positive range, typically 30-60°)
+        if (rangeOfMotion > 0) {
+          // Score based on range: 0-40° gives 0-80 points, 40-60° gives 80-100 points
+          if (rangeOfMotion <= 40) {
+            postureScore = (rangeOfMotion / 40) * 80; // 0-40° → 0-80 points
+          } else if (rangeOfMotion <= 60) {
+            postureScore = 80 + ((rangeOfMotion - 40) / 20) * 20; // 40-60° → 80-100 points
+          } else {
+            // 60-80°: still good but not optimal
+            postureScore = 100 - ((rangeOfMotion - 60) / 20) * 10; // 60-80° → 100-90 points
+          }
+        } else {
+          // No movement (range ~0) or negative range
+          postureScore = 0;
+        }
+        
+        // Alignment: correct if raising arm with good range (30-60°)
+        alignment = rangeOfMotion >= 30 && rangeOfMotion <= 60 ? 'Correct' : 'Off';
+      }
+      
+    } else if (exerciseType === 'squat') {
+      // For squat:
+      // Baseline = standing position (đứng thẳng, angle lớn ~170-180°)
+      // Good form = squat down (angle giảm ~90-120°)
+      // Range of motion = baseline - currentAngle (positive when squatting down)
+      rangeOfMotion = baselineAngleRef.current - smoothAngle;
+      
+      // Validate range is reasonable for squat (0-90°)
+      const MAX_RANGE = 90;
+      if (rangeOfMotion < 0 || rangeOfMotion > MAX_RANGE) {
+        // Invalid range - might be measurement error
+        postureScore = 0;
+        alignment = 'Off';
+      } else {
+        // Score is high when squatting down (positive range, typically 40-70°)
+        if (rangeOfMotion > 0) {
+          // Squat typically needs more range than shoulder rotation
+          // Score based on range: 0-50° gives 0-80 points, 50-70° gives 80-100 points
+          if (rangeOfMotion <= 50) {
+            postureScore = (rangeOfMotion / 50) * 80; // 0-50° → 0-80 points
+          } else if (rangeOfMotion <= 70) {
+            postureScore = 80 + ((rangeOfMotion - 50) / 20) * 20; // 50-70° → 80-100 points
+          } else {
+            // 70-90°: very deep squat, might be too deep
+            postureScore = 100 - ((rangeOfMotion - 70) / 20) * 10; // 70-90° → 100-90 points
+          }
+        } else {
+          // No movement or negative range
+          postureScore = 0;
+        }
+        
+        // Alignment: correct if squatting with good depth (40-70°)
+        alignment = rangeOfMotion >= 40 && rangeOfMotion <= 70 ? 'Correct' : 'Off';
+      }
+    }
+    
+    // Evaluate form quality based on stability
+    const stability = prevAnglesRef.current.length > 1
+      ? Math.sqrt(
+          prevAnglesRef.current.reduce((sum, a) => sum + Math.pow(a - smoothAngle, 2), 0) /
+          prevAnglesRef.current.length
+        )
+      : 0;
+    
+    let formQuality = '-';
+    if (rangeOfMotion < 5) {
+      formQuality = 'Needs Work'; // Not moving enough
+    } else if (stability > 5) {
+      formQuality = 'Shaky';
+    } else if (postureScore > 85) {
+      formQuality = 'Excellent';
+    } else if (postureScore > 70) {
+      formQuality = 'Good';
+    } else {
+      formQuality = 'Needs Work';
+    }
+
+    const result = {
+      posture_score: Math.round(postureScore * 10) / 10,
+      alignment,
+      range_of_motion: Math.round(smoothAngle),
+      form_quality: formQuality,
+      reps: repsRef.current,
+    };
+    
+    // Debug logging for posture_score and range_of_motion
+    if (import.meta.env.DEV) {
+      console.log(`[${exerciseType}] posture_score: ${result.posture_score}, range_of_motion: ${result.range_of_motion}, smoothAngle: ${Math.round(smoothAngle)}, baseline: ${Math.round(baselineAngleRef.current)}, range: ${Math.round(rangeOfMotion)}`);
+    }
+    
+    return result;
+  }, [calculateAngle]);
+
+  const handleMetricsPayload = useCallback((payload: Record<string, unknown> | null) => {
+    // Only update if we have valid payload data
+    if (!payload) {
+      return;
+    }
+    
+    const postureScore = toNumber(payload['posture_score']);
+    // Always update metrics if we have valid data from analyzePose
+    // (analyzePose already validates landmarks before returning data)
     setMetrics({
-      postureScore: toNumber(payload['posture_score']),
+      postureScore,
       alignment: (payload['alignment'] as string) ?? '-',
       rangeOfMotion: toNumber(payload['range_of_motion']),
       formQuality: (payload['form_quality'] as string) ?? '-',
@@ -230,7 +612,7 @@ export function LiveSession() {
 
   const startPreview = async () => {
     try {
-      let videoConstraints: MediaTrackConstraints = { 
+      const videoConstraints: MediaTrackConstraints = { 
         width: { ideal: 1280 },
         height: { ideal: 720 },
       };
@@ -275,7 +657,7 @@ export function LiveSession() {
     setIsPreviewActive(false);
   };
 
-  const startSession = () => {
+  const startSession = async () => {
     // Validation
     if (!selectedCameraIndex && !selectedDeviceId) {
       return;
@@ -285,103 +667,120 @@ export function LiveSession() {
       return;
     }
 
+    const video = videoRef.current;
+    if (!video) {
+      console.error('Video element not available');
+      return;
+    }
+
     // Clean up previous session
     endSession();
 
-    // Connect to socket if not already connected
-    const socket = socketService.connect();
-    socketRef.current = socket;
+    // Reset pose analysis state
+    prevAnglesRef.current = [];
+    baselineAngleRef.current = null;
+    directionRef.current = null;
+    repsRef.current = 0;
+    baselineCalibrationFramesRef.current = [];
+    baselineCalibratedRef.current = false;
+    
+    // Reset metrics BEFORE starting session (not after)
+    setMetrics({ ...DEFAULT_METRICS });
 
-    // Log socket connection status
-    console.log('🔌 [LiveSession] Socket ID:', socket.id);
-    console.log('🔌 [LiveSession] Socket connected:', socket.connected);
-
-    // Listen to socket connection events for debugging
-    socket.on('connect', () => {
-      console.log('✅ [LiveSession] Socket connected:', socket.id);
-    });
-
-    socket.on('disconnect', () => {
-      console.log('❌ [LiveSession] Socket disconnected');
-    });
-
-    socket.on('connect_error', (error) => {
-      console.error('❌ [LiveSession] Socket connection error:', error);
-    });
-
-    // Make API call to start session
-    const url = new URL(`${API_BASE_URL}/sessions/start`);
-    url.searchParams.set('exercise', exerciseOption);
-    url.searchParams.set('camera', selectedCameraIndex || '0');
-
-    console.log('🚀 [LiveSession] Starting session:', { exercise: exerciseOption, camera: selectedCameraIndex || '0' });
-
-    fetch(url.toString())
-      .then((res) => res.json())
-      .then((data) => {
-        console.log('📥 [LiveSession] Session start response:', data);
-        
-        if (data.success && data.sessionId) {
-          sessionIdRef.current = data.sessionId;
-          console.log('✅ [LiveSession] Session started with ID:', data.sessionId);
-
-          // Join session room
-          socket.emit('session:join', { sessionId: data.sessionId });
-          console.log('🔗 [LiveSession] Joined session room:', `session_${data.sessionId}`);
-
-          // Listen for session status
-          const handleStatus = (payload: StatusEvent) => {
-            console.log('📢 [LiveSession] Received status event:', payload);
-            
-            if (payload.level === 'error') {
-              console.error('❌ [LiveSession] Session error:', payload.message);
-              setIsSessionActive(false);
-              return;
-            }
-            if (payload.code !== undefined) {
-              console.log('ℹ️ [LiveSession] Session ended with code:', payload.code);
-              setIsSessionActive(false);
-            }
-          };
-
-          // Listen for metrics
-          const handleMetrics = (payload: Record<string, unknown>) => {
-            console.log('📊 [LiveSession] Received metrics event:', payload);
-            console.log('📊 [LiveSession] Payload keys:', Object.keys(payload));
-            console.log('📊 [LiveSession] posture_score:', payload['posture_score']);
-            console.log('📊 [LiveSession] range_of_motion:', payload['range_of_motion']);
-            console.log('📊 [LiveSession] alignment:', payload['alignment']);
-            console.log('📊 [LiveSession] form_quality:', payload['form_quality']);
-            
-            if (!payload || typeof payload !== 'object') {
-              console.warn('⚠️ [LiveSession] Invalid metrics payload:', payload);
-              return;
-            }
-            
-            handleMetricsPayload(payload);
-          };
-
-          // Store handlers in refs for cleanup
-          statusHandlerRef.current = handleStatus;
-          metricsHandlerRef.current = handleMetrics;
-
-          socket.on('session:status', handleStatus);
-          socket.on('session:metrics', handleMetrics);
-
-          setMetrics({ ...DEFAULT_METRICS });
-          setIsSessionActive(true);
-        } else {
-          console.error('Failed to start session:', data);
-          setIsSessionActive(false);
-        }
-      })
-      .catch((error) => {
-        console.error('Error starting session:', error);
-        setIsSessionActive(false);
+    try {
+      // Initialize MediaPipe Pose
+      const pose = new Pose({
+        locateFile: (file) => {
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+        },
       });
+
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        smoothSegmentation: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      // Set up pose results handler
+      pose.onResults((results) => {
+        const metricsData = analyzePose(results, exerciseOption);
+        // Only update metrics if we have valid data
+        if (metricsData !== null) {
+          handleMetricsPayload(metricsData);
+        }
+      });
+
+      poseRef.current = pose;
+
+      // Ensure video stream is ready
+      if (!previewStream) {
+        await startPreview();
+        // Wait a bit for stream to be ready
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      // Initialize Camera
+      const camera = new Camera(video, {
+        onFrame: async () => {
+          if (poseRef.current && video.readyState === 4) {
+            await poseRef.current.send({ image: video });
+          }
+        },
+        width: 640,
+        height: 480,
+      });
+
+      cameraRef.current = camera;
+      await camera.start();
+
+      // Generate session ID locally
+      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      sessionIdRef.current = sessionId;
+
+      // Connect to socket (optional - for future features like saving sessions)
+      const socket = socketService.connect();
+      socketRef.current = socket;
+
+      if (import.meta.env.DEV) {
+        console.log('✅ [LiveSession] Session started with MediaPipe.js');
+        console.log('✅ [LiveSession] Session ID:', sessionId);
+      }
+
+      setIsSessionActive(true);
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('Error starting session:', error);
+      }
+      setIsSessionActive(false);
+      alert('Failed to start session. Please check camera permissions and try again.');
+    }
   };
 
   const endSession = () => {
+    // Stop MediaPipe Camera
+    if (cameraRef.current) {
+      cameraRef.current.stop();
+      cameraRef.current = null;
+    }
+
+    // Close MediaPipe Pose
+    if (poseRef.current) {
+      poseRef.current.close();
+      poseRef.current = null;
+    }
+
+    // Reset pose analysis state
+    prevAnglesRef.current = [];
+    baselineAngleRef.current = null;
+    directionRef.current = null;
+    repsRef.current = 0;
+    baselineCalibrationFramesRef.current = [];
+    baselineCalibratedRef.current = false;
+
+    // Clean up socket (optional - for future features)
     const socket = socketRef.current;
     const sessionId = sessionIdRef.current;
 
@@ -398,17 +797,6 @@ export function LiveSession() {
 
       // Leave session room
       socket.emit('session:leave', { sessionId });
-
-      // Optionally call the end endpoint to clean up backend
-      fetch(`${API_BASE_URL}/sessions/end`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sessionId }),
-      }).catch((error) => {
-        console.error('Error ending session:', error);
-      });
     }
 
     sessionIdRef.current = null;
@@ -471,7 +859,14 @@ export function LiveSession() {
       endSession();
       
       // Complete session stats (+20 XP, increment session, update streak, quest progress)
-      completeSessionStats().catch(() => {});
+      completeSessionStats().catch((error) => {
+        // Log error but don't block UI
+        if (import.meta.env.DEV) {
+          console.error('[LiveSession] Error completing session stats:', error);
+        }
+        // Optionally show user-friendly error (non-blocking)
+        // toast.error('Failed to save session stats');
+      });
       
       // Update exercise session count if exercise was selected from library
       // Do this AFTER setting sessionComplete to prevent reset loops

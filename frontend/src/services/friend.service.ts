@@ -1,6 +1,67 @@
 import api from './api';
 import { socketService } from './socket.service';
 
+// Helper function to create a Promise with timeout cleanup
+function createSocketPromiseWithTimeout<T>(
+  socket: ReturnType<typeof socketService.getSocket>,
+  emitEvent: string,
+  emitData: unknown,
+  successEvent: string,
+  errorEvent: string,
+  timeoutMs = 10000
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error('Socket not available'));
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let resolved = false;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const handleSuccess = (data: T) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      socket.off(successEvent, handleSuccess);
+      socket.off(errorEvent, handleError);
+      resolve(data);
+    };
+
+    const handleError = (error: { message?: string }) => {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      socket.off(successEvent, handleSuccess);
+      socket.off(errorEvent, handleError);
+      reject(new Error(error.message || 'Request failed'));
+    };
+
+    // Set timeout
+    timeoutId = setTimeout(() => {
+      if (resolved) return;
+      resolved = true;
+      socket.off(successEvent, handleSuccess);
+      socket.off(errorEvent, handleError);
+      reject(new Error('Request timeout'));
+    }, timeoutMs);
+
+    // Register event listeners
+    socket.once(successEvent, handleSuccess);
+    socket.once(errorEvent, handleError);
+
+    // Emit request
+    socket.emit(emitEvent, emitData);
+  });
+}
+
 export interface FriendRequest {
   id: number;
   fromUserId: number;
@@ -24,21 +85,14 @@ export const friendService = {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('friend:send_request', { toUserId });
-        
-        socket.once('friend:request_sent', (request) => {
-          clearTimeout(timeout);
-          resolve(request);
-        });
-        
-        socket.once('friend:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to send friend request'));
-        });
-      });
+      return createSocketPromiseWithTimeout<FriendRequest>(
+        socket,
+        'friend:send_request',
+        { toUserId },
+        'friend:request_sent',
+        'friend:error',
+        10000
+      );
     }
     
     // Fallback to REST
@@ -50,22 +104,16 @@ export const friendService = {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('friend:accept_request', { requestId });
-        
-        socket.once('friend:request_accepted', (data) => {
-          clearTimeout(timeout);
-          // Backend returns FriendRequest, create a minimal one
-          resolve({ id: data.requestId || requestId, status: 'accepted' } as FriendRequest);
-        });
-        
-        socket.once('friend:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to accept friend request'));
-        });
-      });
+      const result = await createSocketPromiseWithTimeout<{ requestId?: number } & FriendRequest>(
+        socket,
+        'friend:accept_request',
+        { requestId },
+        'friend:request_accepted',
+        'friend:error',
+        10000
+      );
+      // Backend returns FriendRequest, create a minimal one if needed
+      return { id: result.requestId || result.id || requestId, status: 'accepted', ...result } as FriendRequest;
     }
     
     const response = await api.post<FriendRequest>(`/friends/accept/${requestId}`);
@@ -76,45 +124,31 @@ export const friendService = {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('friend:reject_request', { requestId });
-        
-        socket.once('friend:request_rejected', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        
-        socket.once('friend:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to reject friend request'));
-        });
-      });
+      await createSocketPromiseWithTimeout<void>(
+        socket,
+        'friend:reject_request',
+        { requestId },
+        'friend:request_rejected',
+        'friend:error',
+        10000
+      );
+    } else {
+      await api.post(`/friends/reject/${requestId}`);
     }
-    
-    await api.post(`/friends/reject/${requestId}`);
   },
 
   async getFriends(): Promise<Friend[]> {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('friend:get_friends');
-        
-        socket.once('friend:friends', (friends) => {
-          clearTimeout(timeout);
-          resolve(friends);
-        });
-        
-        socket.once('friend:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to get friends'));
-        });
-      });
+      return createSocketPromiseWithTimeout<Friend[]>(
+        socket,
+        'friend:get_friends',
+        undefined,
+        'friend:friends',
+        'friend:error',
+        10000
+      );
     }
     
     const response = await api.get<Friend[]>('/friends');
@@ -134,21 +168,14 @@ export const friendService = {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('friend:get_requests');
-        
-        socket.once('friend:requests', (requests) => {
-          clearTimeout(timeout);
-          resolve(requests);
-        });
-        
-        socket.once('friend:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to get friend requests'));
-        });
-      });
+      return createSocketPromiseWithTimeout<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>(
+        socket,
+        'friend:get_requests',
+        undefined,
+        'friend:requests',
+        'friend:error',
+        10000
+      );
     }
     
     const response = await api.get<{ incoming: FriendRequest[]; outgoing: FriendRequest[] }>('/friends/requests/all');
@@ -168,21 +195,18 @@ export const friendService = {
     const socket = socketService.getSocket();
     
     if (socket?.connected) {
-      return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Request timeout')), 10000);
-        
-        socket.emit('friend:check_status', { toUserId });
-        
-        socket.once('friend:status', (status) => {
-          clearTimeout(timeout);
-          resolve(status);
-        });
-        
-        socket.once('friend:error', (error) => {
-          clearTimeout(timeout);
-          reject(new Error(error.message || 'Failed to check status'));
-        });
-      });
+      return createSocketPromiseWithTimeout<{
+        status: 'friends' | 'request_sent' | 'request_received' | 'not_friends';
+        request?: FriendRequest;
+        friendship?: Friend;
+      }>(
+        socket,
+        'friend:check_status',
+        { toUserId },
+        'friend:status',
+        'friend:error',
+        10000
+      );
     }
     
     const response = await api.get(`/friends/status/${toUserId}`);

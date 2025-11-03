@@ -70,10 +70,37 @@ api.interceptors.response.use(
         }
       } catch (refreshError) {
         // Refresh failed, clear storage and redirect to login
-        localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-        localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
-        localStorage.removeItem(STORAGE_KEYS.USER);
-        window.location.href = '/login';
+        try {
+          localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+        } catch (storageError) {
+          // Log storage error in development
+          if (import.meta.env.DEV) {
+            console.warn('[api] Error clearing storage:', storageError);
+          }
+        }
+        
+        // Use window.location.replace instead of href to prevent back button issues
+        // Add try-catch for safety
+        try {
+          window.location.replace('/login');
+        } catch (redirectError) {
+          // Fallback: try href if replace fails
+          if (import.meta.env.DEV) {
+            console.warn('[api] Error with location.replace, trying href:', redirectError);
+          }
+          try {
+            window.location.href = '/login';
+          } catch (fallbackError) {
+            // Last resort: reload page if redirect fails completely
+            if (import.meta.env.DEV) {
+              console.error('[api] All redirect methods failed:', fallbackError);
+            }
+            window.location.reload();
+          }
+        }
+        
         return Promise.reject(refreshError);
       }
     }

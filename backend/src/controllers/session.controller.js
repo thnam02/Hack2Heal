@@ -87,9 +87,17 @@ const startSession = (req, res) => {
   // The script path is already absolute, so we use process.cwd() as the working directory
   const cwd = process.cwd();
 
+  // Set environment variables to force CPU mode and reduce MediaPipe GPU warnings
+  const env = {
+    ...process.env,
+    GLOG_minloglevel: '2', // Reduce MediaPipe logging
+    MP_CPU: '1', // Force CPU mode (disable GPU)
+  };
+
   const child = spawn(PYTHON_EXECUTABLE, [SCRIPT_PATH, exercise, cameraSource], {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
+    env,
   });
 
   logger.info(`pose tracker spawned (session=${sessionId}, exercise=${exercise}, camera=${cameraSource}) pid=${child.pid}`);
@@ -142,12 +150,25 @@ const startSession = (req, res) => {
 
   child.stderr.on('data', (chunk) => {
     const errorOutput = chunk.toString();
-    logger.error(`[Session ${sessionId}] Python stderr:`, errorOutput);
-    // Emit error to frontend
-    io.to(`session_${sessionId}`).emit('session:status', {
-      message: `Python script error: ${errorOutput}`,
-      level: 'error',
-    });
+    // Filter out MediaPipe GPU warnings and verbose logs - only log actual errors
+    const isActualError =
+      errorOutput.includes('ERROR') ||
+      errorOutput.includes('error') ||
+      errorOutput.includes('Failed') ||
+      errorOutput.includes('Could not') ||
+      errorOutput.includes('FATAL');
+
+    if (isActualError) {
+      logger.error(`[Session ${sessionId}] Python stderr:`, errorOutput);
+      // Emit error to frontend only for actual errors
+      io.to(`session_${sessionId}`).emit('session:status', {
+        message: `Python script error: ${errorOutput}`,
+        level: 'error',
+      });
+    } else {
+      // Log warnings/debug messages but don't send to frontend
+      logger.debug(`[Session ${sessionId}] Python stderr (warn):`, errorOutput);
+    }
   });
 
   child.on('close', (code) => {

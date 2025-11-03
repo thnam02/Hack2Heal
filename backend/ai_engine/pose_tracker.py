@@ -110,8 +110,14 @@ if __name__ == "__main__":
     except ValueError:
         camera_index = 0
 
-    # Initialize MediaPipe Pose
+    # Initialize MediaPipe Pose - Force CPU mode (no GPU required)
+    # Setting model_complexity=1 and no GPU to avoid OpenGL errors on headless servers
     pose = mp_pose.Pose(
+        static_image_mode=False,
+        model_complexity=1,
+        smooth_landmarks=True,
+        enable_segmentation=False,
+        smooth_segmentation=False,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5
     )
@@ -123,7 +129,12 @@ if __name__ == "__main__":
     cap = cv2.VideoCapture(camera_index)
     
     if not cap.isOpened():
-        print(json.dumps({"error": f"Could not open camera {camera_index}"}), flush=True)
+        error_msg = {
+            "error": f"Could not open camera {camera_index}",
+            "source": "camera",
+            "message": "Camera not available. This may happen on servers without camera hardware.",
+        }
+        print(json.dumps(error_msg), flush=True)
         sys.exit(1)
     
     try:

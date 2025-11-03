@@ -39,51 +39,52 @@ export function Messages() {
   // Load conversations on mount (only once)
   useEffect(() => {
     let isMounted = true;
-    
+    let handlerRef: ((conversations: Conversation[]) => void) | null = null;
+
     const loadAndSubscribe = async () => {
+      if (!isMounted) return;
+
       try {
         // Load conversations first
         await loadConversations();
       } catch (error: unknown) {
-        console.error('[Messages] Error loading conversations:', error);
+        if (import.meta.env.DEV) {
+          console.error('[Messages] Error loading conversations:', error);
+        }
       }
-      
+
+      if (!isMounted) return;
+
       // Subscribe to real-time conversation updates
       // This handler will be called when backend emits message:conversations_updated
       // We should NOT call loadConversations() again here to prevent loops
       const handleConversationsUpdated = (conversations: Conversation[]) => {
         if (!isMounted) return;
-        
-        console.log('[Messages] Received conversations_updated event, updating state');
+
+        if (import.meta.env.DEV) {
+          console.log('[Messages] Received conversations_updated event, updating state');
+        }
         const freshConversations = conversations || [];
         setConversations(freshConversations);
         // Update cache with fresh real-time data
         messageService.updateCache(freshConversations);
       };
-      
+
+      // Store handler ref for cleanup
+      handlerRef = handleConversationsUpdated;
       messageService.onConversationsUpdated(handleConversationsUpdated);
-      
-      return () => {
-        messageService.offConversationsUpdated(handleConversationsUpdated);
-      };
     };
 
-    let cleanupFn: (() => void) | undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cleanupPromise = loadAndSubscribe().then((fn: any) => {
-      cleanupFn = fn;
-    });
+    // Start async operation
+    loadAndSubscribe();
 
+    // Cleanup function - always unsubscribe if handler was registered
     return () => {
       isMounted = false;
-      if (cleanupFn) {
-        cleanupFn();
+      if (handlerRef) {
+        messageService.offConversationsUpdated(handlerRef);
+        handlerRef = null;
       }
-      cleanupPromise.then(() => {
-        if (cleanupFn) {
-          cleanupFn();
-        }
-      });
     };
   }, []); // Empty deps - only run once on mount
 
@@ -99,7 +100,9 @@ export function Messages() {
 
   // Load messages when conversation is selected
   useEffect(() => {
-    console.log('[Messages] useEffect - selectedConversation:', selectedConversation, 'friendshipStatus:', friendshipStatus);
+    if (import.meta.env.DEV) {
+      console.log('[Messages] useEffect - selectedConversation:', selectedConversation, 'friendshipStatus:', friendshipStatus);
+    }
     
     // If conversation exists in conversations list, it means they have messages (are friends)
     // So we can load messages even if friendshipStatus is still loading
@@ -108,13 +111,17 @@ export function Messages() {
     if (selectedConversation) {
       // Prevent loading the same conversation multiple times
       if (loadingMessagesRef.current.has(selectedConversation)) {
-        console.log('[Messages] Messages already loading for conversation:', selectedConversation);
+        if (import.meta.env.DEV) {
+          console.log('[Messages] Messages already loading for conversation:', selectedConversation);
+        }
         return;
       }
 
       // If conversation exists, we can load messages immediately
       if (conversationExists || friendshipStatus === 'friends') {
-        console.log('[Messages] Loading messages for conversation:', selectedConversation, 'conversationExists:', conversationExists, 'friendshipStatus:', friendshipStatus);
+        if (import.meta.env.DEV) {
+          console.log('[Messages] Loading messages for conversation:', selectedConversation, 'conversationExists:', conversationExists, 'friendshipStatus:', friendshipStatus);
+        }
         
         loadingMessagesRef.current.add(selectedConversation);
         loadMessages(selectedConversation).finally(() => {
@@ -122,13 +129,23 @@ export function Messages() {
         });
         
         // Mark conversation as read (but don't wait for it to complete)
-        messageService.markConversationAsRead(selectedConversation).catch(() => {});
+        messageService.markConversationAsRead(selectedConversation).catch((error) => {
+          // Log error but don't block UI - marking as read is non-critical
+          if (import.meta.env.DEV) {
+            console.error('[Messages] Error marking conversation as read:', error);
+          }
+          // Silently fail - this is a background operation
+        });
       } else if (friendshipStatus === 'not_friends') {
-        console.log('[Messages] Not friends, clearing messages');
+        if (import.meta.env.DEV) {
+          console.log('[Messages] Not friends, clearing messages');
+        }
         setMessages([]);
       } else if (friendshipStatus === 'loading') {
         // Wait for friendship status check
-        console.log('[Messages] Waiting for friendship status check...');
+        if (import.meta.env.DEV) {
+          console.log('[Messages] Waiting for friendship status check...');
+        }
       }
     } else {
       setMessages([]);
@@ -175,15 +192,21 @@ export function Messages() {
 
   const checkFriendshipStatus = async () => {
     if (!selectedConversation || !user?.id) {
-      console.log('[Messages] checkFriendshipStatus - missing selectedConversation or user.id');
+      if (import.meta.env.DEV) {
+        console.log('[Messages] checkFriendshipStatus - missing selectedConversation or user.id');
+      }
       return;
     }
     
-    console.log('[Messages] checkFriendshipStatus - checking status for userId:', selectedConversation);
+    if (import.meta.env.DEV) {
+      console.log('[Messages] checkFriendshipStatus - checking status for userId:', selectedConversation);
+    }
     try {
       setFriendshipStatus('loading');
       const status = await friendService.getFriendRequestStatus(selectedConversation);
-      console.log('[Messages] Friendship status result:', status.status);
+      if (import.meta.env.DEV) {
+        console.log('[Messages] Friendship status result:', status.status);
+      }
       setFriendshipStatus(status.status);
       
       // If we have a userName from location state but not in conversations, set it
@@ -191,7 +214,9 @@ export function Messages() {
         setSelectedUserName((location.state as { userName?: string }).userName || null);
       }
     } catch (error: unknown) {
-      console.error('[Messages] Error checking friendship status:', error);
+      if (import.meta.env.DEV) {
+        console.error('[Messages] Error checking friendship status:', error);
+      }
       setFriendshipStatus('not_friends');
     }
   };
@@ -199,15 +224,21 @@ export function Messages() {
   const loadConversations = async () => {
     try {
       setIsLoading(true);
-      console.log('[Messages] loadConversations called');
+      if (import.meta.env.DEV) {
+        console.log('[Messages] loadConversations called');
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = (await messageService.getConversations(true)) as any; // Use cache
-      console.log('[Messages] loadConversations completed, got', data?.length || 0, 'conversations');
+      if (import.meta.env.DEV) {
+        console.log('[Messages] loadConversations completed, got', data?.length || 0, 'conversations');
+      }
       setConversations(data || []);
     } catch (error: unknown) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const err = error as { code?: string } & any;
-      console.error('[Messages] Load conversations error:', error);
+      if (import.meta.env.DEV) {
+        console.error('[Messages] Load conversations error:', error);
+      }
       if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to load conversations');
       }
@@ -219,7 +250,9 @@ export function Messages() {
           setConversations(conversations || []);
         }
       } catch (cacheError) {
-        console.error('[Messages] Cache fallback failed:', cacheError);
+        if (import.meta.env.DEV) {
+          console.error('[Messages] Cache fallback failed:', cacheError);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -227,16 +260,22 @@ export function Messages() {
   };
 
   const loadMessages = async (userId: number): Promise<void> => {
-    console.log('[Messages] loadMessages called for userId:', userId);
+    if (import.meta.env.DEV) {
+      console.log('[Messages] loadMessages called for userId:', userId);
+    }
     try {
       setIsLoading(true);
       const data = await messageService.getMessages(userId);
-      console.log('[Messages] Loaded messages:', data?.length || 0, 'messages');
-      console.log('[Messages] Messages data:', data);
+      if (import.meta.env.DEV) {
+        console.log('[Messages] Loaded messages:', data?.length || 0, 'messages');
+        console.log('[Messages] Messages data:', data);
+      }
       
       // Ensure messages are set
       if (data && Array.isArray(data) && data.length > 0) {
-        console.log('[Messages] Setting messages to state:', data.length);
+        if (import.meta.env.DEV) {
+          console.log('[Messages] Setting messages to state:', data.length);
+        }
         setMessages(data);
         
         // Force re-render by scrolling to bottom
@@ -244,20 +283,26 @@ export function Messages() {
           scrollToBottom();
         }, 100);
       } else {
-        console.log('[Messages] No messages found, setting empty array');
+        if (import.meta.env.DEV) {
+          console.log('[Messages] No messages found, setting empty array');
+        }
         setMessages([]);
       }
     } catch (error: unknown) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const err = error as { code?: string } & any;
-      console.error('[Messages] Error loading messages:', error);
+      if (import.meta.env.DEV) {
+        console.error('[Messages] Error loading messages:', error);
+      }
       if (err?.code !== 'ERR_NETWORK' && err?.code !== 'ERR_CONNECTION_REFUSED') {
         toast.error('Failed to load messages');
       }
       setMessages([]);
     } finally {
       setIsLoading(false);
-      console.log('[Messages] loadMessages completed, isLoading set to false');
+      if (import.meta.env.DEV) {
+        console.log('[Messages] loadMessages completed, isLoading set to false');
+      }
     }
   };
 
@@ -339,7 +384,9 @@ export function Messages() {
   const isFriends = selectedConv !== undefined || friendshipStatus === 'friends';
   
   // Debug logging
-  console.log('[Messages] Render - selectedConversation:', selectedConversation, 'selectedConv:', selectedConv, 'friendshipStatus:', friendshipStatus, 'isFriends:', isFriends, 'messages.length:', messages.length, 'isLoading:', isLoading);
+  if (import.meta.env.DEV) {
+    console.log('[Messages] Render - selectedConversation:', selectedConversation, 'selectedConv:', selectedConv, 'friendshipStatus:', friendshipStatus, 'isFriends:', isFriends, 'messages.length:', messages.length, 'isLoading:', isLoading);
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
@@ -486,7 +533,9 @@ export function Messages() {
                         <div className="flex flex-col gap-4 py-2" style={{ width: '100%' }}>
                           {messages.map((message, index) => {
                             const isOwnMessage = message.fromUserId === Number(user?.id);
-                            console.log(`[Messages] Rendering message ${index}:`, message.id, message.content, 'isOwnMessage:', isOwnMessage);
+                            if (import.meta.env.DEV) {
+                              console.log(`[Messages] Rendering message ${index}:`, message.id, message.content, 'isOwnMessage:', isOwnMessage);
+                            }
                             return (
                               <div
                                 key={message.id}

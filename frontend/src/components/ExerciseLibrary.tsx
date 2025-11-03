@@ -184,11 +184,19 @@ export function ExerciseLibrary() {
 
   // Listen for storage events to update when exercises are completed
   useEffect(() => {
+    let storageTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
     const handleStorageChange = () => {
+      // Clear any pending timeout
+      if (storageTimeoutId) {
+        clearTimeout(storageTimeoutId);
+      }
+      
       // Use a slightly longer delay to ensure localStorage is fully updated
-      setTimeout(() => {
+      storageTimeoutId = setTimeout(() => {
         const loadedExercises = exerciseService.getExercises();
         setExercises(loadedExercises);
+        storageTimeoutId = null;
       }, 150); // Slightly longer delay to ensure localStorage write is complete
     };
 
@@ -206,6 +214,12 @@ export function ExerciseLibrary() {
     window.addEventListener('focus', handleFocus);
 
     return () => {
+      // Clear any pending timeout
+      if (storageTimeoutId) {
+        clearTimeout(storageTimeoutId);
+        storageTimeoutId = null;
+      }
+      
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('exerciseProgressUpdated', handleStorageChange);
       window.removeEventListener('focus', handleFocus);

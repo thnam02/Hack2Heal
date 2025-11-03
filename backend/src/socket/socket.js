@@ -8,9 +8,17 @@ const { friendModel } = require('../models');
 let io;
 
 const initializeSocket = (server) => {
+  // FRONTEND_URL is required for production
+  const frontendUrl = process.env.FRONTEND_URL;
+
+  // Only allow localhost fallback in development
+  if (!frontendUrl && process.env.NODE_ENV !== 'development') {
+    throw new Error('FRONTEND_URL environment variable is required for production deployment.');
+  }
+
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+      origin: frontendUrl || 'http://localhost:3001', // localhost only for local dev
       credentials: true,
       methods: ['GET', 'POST'],
     },
