@@ -39,15 +39,20 @@ export interface AuthResponse {
 
 export const authService = {
   async login(credentials: LoginRequest): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/login', credentials);
-    const { user, tokens } = response.data;
-    
-    // Store tokens and user in localStorage
-    localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokens.access.token);
-    localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh.token);
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
-    
-    return response.data;
+    try {
+      const response = await api.post<AuthResponse>('/auth/login', credentials);
+      const { user, tokens } = response.data;
+      
+      // Store tokens and user in localStorage
+      localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokens.access.token);
+      localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokens.refresh.token);
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+      
+      return response.data;
+    } catch (error) {
+      console.error('Login API error:', error);
+      throw error;
+    }
   },
 
   async register(userData: RegisterRequest): Promise<AuthResponse> {

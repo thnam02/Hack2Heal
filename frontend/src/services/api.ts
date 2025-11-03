@@ -1,9 +1,17 @@
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { API_BASE_URL, STORAGE_KEYS } from '../config/constants';
 
+// Log API_BASE_URL in development to debug
+if (import.meta.env.DEV) {
+  console.log('API_BASE_URL:', API_BASE_URL);
+}
+
+// Ensure baseURL includes /v1
+const baseURL = API_BASE_URL.endsWith('/v1') ? API_BASE_URL : `${API_BASE_URL}/v1`;
+
 // Create axios instance
 const api: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL,
   timeout: 30000, // 30 seconds timeout
   headers: {
     'Content-Type': 'application/json',
@@ -18,6 +26,13 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     
+    // Log full URL in development for debugging
+    if (import.meta.env.DEV) {
+      const fullUrl = config.baseURL && config.url 
+        ? `${config.baseURL}${config.url.startsWith('/') ? config.url : `/${config.url}`}`
+        : config.url;
+      console.log('API Request:', config.method?.toUpperCase(), fullUrl);
+    }
     
     return config;
   },

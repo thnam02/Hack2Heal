@@ -1,7 +1,8 @@
 const resolveDefaultApiBaseUrl = () => {
   // Check for explicit environment variable first
   if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+    const url = import.meta.env.VITE_API_BASE_URL;
+    return url.endsWith('/v1') ? url : `${url}/v1`;
   }
 
   // In browser, check if we're on production
@@ -15,7 +16,7 @@ const resolveDefaultApiBaseUrl = () => {
     return `http://${hostname}:3000/v1`;
   }
 
-  // Default fallback
+  // Default fallback - ensure /v1 is included
   return 'https://hack2heal-1.onrender.com/v1';
 };
 

@@ -19,8 +19,30 @@ const Login: React.FC = () => {
       await login({ email, password });
       navigate('/dashboard');
     } catch (err: unknown) {
-      const errorMessage = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      setError(errorMessage || 'Login failed. Please try again.');
+      console.error('Login error:', err);
+      // Better error extraction
+      const axiosError = err as {
+        response?: { data?: { message?: string }; status?: number; statusText?: string };
+        message?: string;
+        code?: string;
+      };
+      
+      let errorMessage = 'Login failed. Please try again.';
+      
+      if (axiosError.response) {
+        // Server responded with error
+        errorMessage = axiosError.response.data?.message || 
+          `Server error: ${axiosError.response.status} ${axiosError.response.statusText}`;
+      } else if (axiosError.message) {
+        // Network or other error
+        if (axiosError.code === 'ERR_NETWORK' || axiosError.message.includes('Network Error')) {
+          errorMessage = 'Network error: Unable to connect to server. Please check your connection.';
+        } else {
+          errorMessage = axiosError.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
