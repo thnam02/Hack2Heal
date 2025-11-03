@@ -292,33 +292,72 @@ export function LiveSession() {
     const socket = socketService.connect();
     socketRef.current = socket;
 
+    // Log socket connection status
+    console.log('🔌 [LiveSession] Socket ID:', socket.id);
+    console.log('🔌 [LiveSession] Socket connected:', socket.connected);
+
+    // Listen to socket connection events for debugging
+    socket.on('connect', () => {
+      console.log('✅ [LiveSession] Socket connected:', socket.id);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ [LiveSession] Socket disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ [LiveSession] Socket connection error:', error);
+    });
+
     // Make API call to start session
     const url = new URL(`${API_BASE_URL}/sessions/start`);
     url.searchParams.set('exercise', exerciseOption);
     url.searchParams.set('camera', selectedCameraIndex || '0');
 
+    console.log('🚀 [LiveSession] Starting session:', { exercise: exerciseOption, camera: selectedCameraIndex || '0' });
+
     fetch(url.toString())
       .then((res) => res.json())
       .then((data) => {
+        console.log('📥 [LiveSession] Session start response:', data);
+        
         if (data.success && data.sessionId) {
           sessionIdRef.current = data.sessionId;
+          console.log('✅ [LiveSession] Session started with ID:', data.sessionId);
 
           // Join session room
           socket.emit('session:join', { sessionId: data.sessionId });
+          console.log('🔗 [LiveSession] Joined session room:', `session_${data.sessionId}`);
 
           // Listen for session status
           const handleStatus = (payload: StatusEvent) => {
+            console.log('📢 [LiveSession] Received status event:', payload);
+            
             if (payload.level === 'error') {
+              console.error('❌ [LiveSession] Session error:', payload.message);
               setIsSessionActive(false);
               return;
             }
             if (payload.code !== undefined) {
+              console.log('ℹ️ [LiveSession] Session ended with code:', payload.code);
               setIsSessionActive(false);
             }
           };
 
           // Listen for metrics
           const handleMetrics = (payload: Record<string, unknown>) => {
+            console.log('📊 [LiveSession] Received metrics event:', payload);
+            console.log('📊 [LiveSession] Payload keys:', Object.keys(payload));
+            console.log('📊 [LiveSession] posture_score:', payload['posture_score']);
+            console.log('📊 [LiveSession] range_of_motion:', payload['range_of_motion']);
+            console.log('📊 [LiveSession] alignment:', payload['alignment']);
+            console.log('📊 [LiveSession] form_quality:', payload['form_quality']);
+            
+            if (!payload || typeof payload !== 'object') {
+              console.warn('⚠️ [LiveSession] Invalid metrics payload:', payload);
+              return;
+            }
+            
             handleMetricsPayload(payload);
           };
 
