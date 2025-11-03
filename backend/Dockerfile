@@ -1,20 +1,22 @@
-FROM node:22-alpine
+FROM node:22-slim
 
 WORKDIR /app
 
-# System deps for building better-sqlite3 and Python packages
-RUN apk add --no-cache \
+# Install system dependencies for better-sqlite3 and Python packages
+RUN apt-get update && apt-get install -y \
     python3 \
-    py3-pip \
-    make \
-    g++ \
-    sqlite-dev \
-    linux-headers \
-    libffi-dev \
-    libstdc++ \
-    musl-dev \
-    opencv-dev \
-    python3-dev
+    python3-pip \
+    python3-dev \
+    build-essential \
+    sqlite3 \
+    libsqlite3-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Prepare writable dirs
 RUN mkdir -p /node_modules && chown node:node -R /node_modules /app
