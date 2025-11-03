@@ -113,7 +113,7 @@ export const friendService = {
         10000
       );
       // Backend returns FriendRequest, create a minimal one if needed
-      return { id: result.requestId || result.id || requestId, status: 'accepted', ...result } as FriendRequest;
+      return { ...result, id: result.requestId || result.id || requestId, status: 'accepted' } as FriendRequest;
     }
     
     const response = await api.post<FriendRequest>(`/friends/accept/${requestId}`);
