@@ -189,7 +189,41 @@ const endSession = (req, res) => {
   });
 };
 
+const checkPythonScript = (req, res) => {
+  const path = require('path');
+  const fs = require('fs');
+  
+  const possiblePaths = [
+    process.env.POSE_TRACKER_SCRIPT_PATH,
+    path.join(process.cwd(), 'ai_engine', 'pose_tracker.py'),
+    path.resolve(process.cwd(), 'ai_engine', 'pose_tracker.py'),
+    path.join(__dirname, '..', '..', 'ai_engine', 'pose_tracker.py'),
+    path.resolve(__dirname, '..', '..', 'ai_engine', 'pose_tracker.py'),
+    path.join(__dirname, '..', '..', '..', 'ai_engine', 'pose_tracker.py'),
+    path.resolve(__dirname, '..', '..', '..', 'ai_engine', 'pose_tracker.py'),
+  ].filter(Boolean);
+
+  const results = possiblePaths.map((p) => ({
+    path: p,
+    exists: fs.existsSync(p),
+  }));
+
+  const found = results.find((r) => r.exists);
+
+  res.json({
+    cwd: process.cwd(),
+    __dirname: __dirname,
+    possiblePaths: results,
+    found: found || null,
+    aiEngineDirExists: fs.existsSync(path.join(process.cwd(), 'ai_engine')),
+    aiEngineFiles: fs.existsSync(path.join(process.cwd(), 'ai_engine'))
+      ? fs.readdirSync(path.join(process.cwd(), 'ai_engine'))
+      : 'ai_engine directory does not exist',
+  });
+};
+
 module.exports = {
   startSession,
   endSession,
+  checkPythonScript,
 };
