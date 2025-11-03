@@ -6,33 +6,51 @@ const { getIO } = require('../socket/socket');
 
 const PYTHON_EXECUTABLE = process.env.PYTHON_EXECUTABLE || 'python3';
 
-// Resolve Python script path - try multiple locations
+// Resolve Python script path - must be called at runtime, not module load time
+// Returns { scriptPath: string, triedPaths: string[] }
 function resolveScriptPath() {
+  const possiblePaths = [];
+
   // 1. Environment variable (highest priority - for custom deployments)
   if (process.env.POSE_TRACKER_SCRIPT_PATH) {
-    const envPath = process.env.POSE_TRACKER_SCRIPT_PATH;
-    if (fs.existsSync(envPath)) {
-      return envPath;
+    possiblePaths.push(process.env.POSE_TRACKER_SCRIPT_PATH);
+    possiblePaths.push(path.resolve(process.env.POSE_TRACKER_SCRIPT_PATH));
+  }
+
+  // 2. In backend/ai_engine (from process.cwd - Render deployment: /app/ai_engine/pose_tracker.py)
+  const cwdPath = path.join(process.cwd(), 'ai_engine', 'pose_tracker.py');
+  possiblePaths.push(cwdPath);
+  possiblePaths.push(path.resolve(cwdPath));
+
+  // 3. In backend/ai_engine (relative to controllers: backend/src/controllers -> backend/ai_engine)
+  const relativePath = path.join(__dirname, '..', '..', 'ai_engine', 'pose_tracker.py');
+  possiblePaths.push(relativePath);
+  possiblePaths.push(path.resolve(relativePath));
+
+  // 4. Relative to repo root (for local development)
+  const rootPath = path.join(__dirname, '..', '..', '..', 'ai_engine', 'pose_tracker.py');
+  possiblePaths.push(rootPath);
+  possiblePaths.push(path.resolve(rootPath));
+
+  const triedPaths = possiblePaths.filter(Boolean);
+
+  // Try each path
+  for (const tryPath of triedPaths) {
+    if (tryPath && fs.existsSync(tryPath)) {
+      logger.info(`Found Python script at: ${tryPath}`);
+      return {
+        scriptPath: path.resolve(tryPath),
+        triedPaths,
+      };
     }
   }
 
-  // 2. In backend/ai_engine (if ai_engine was copied into backend)
-  const backendPath = path.join(__dirname, '../../ai_engine/pose_tracker.py');
-  if (fs.existsSync(backendPath)) {
-    return backendPath;
-  }
-
-  // 3. Relative to repo root (for local development)
-  const rootPath = path.join(__dirname, '../../../ai_engine/pose_tracker.py');
-  if (fs.existsSync(rootPath)) {
-    return rootPath;
-  }
-
-  // 4. Fallback to root path (will be checked later and return error)
-  return rootPath;
+  // Return the most likely path (absolute from cwd for Render)
+  return {
+    scriptPath: path.resolve(process.cwd(), 'ai_engine', 'pose_tracker.py'),
+    triedPaths,
+  };
 }
-
-const SCRIPT_PATH = resolveScriptPath();
 
 // Store active sessions with their child processes for cleanup
 const activeSessions = new Map();
@@ -45,29 +63,25 @@ const startSession = (req, res) => {
   const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const io = getIO();
 
+  // Resolve script path at runtime (not module load time)
+  const { scriptPath: SCRIPT_PATH, triedPaths } = resolveScriptPath();
+
   // Check if Python script exists
   if (!fs.existsSync(SCRIPT_PATH)) {
-    const possiblePaths = [
-      path.join(__dirname, '../../ai_engine/pose_tracker.py'),
-      path.join(__dirname, '../../../ai_engine/pose_tracker.py'),
-      process.env.POSE_TRACKER_SCRIPT_PATH,
-    ].filter(Boolean);
-
     logger.error(`Python script not found at ${SCRIPT_PATH}`);
-    logger.error(`Tried paths: ${possiblePaths.join(', ')}`);
+    logger.error(`Tried paths: ${triedPaths.join(', ')}`);
     logger.error(`Current working directory: ${process.cwd()}`);
     logger.error(`__dirname: ${__dirname}`);
     
     return res.status(500).json({
       success: false,
-      message: `Python pose tracker script not found. Please ensure ai_engine/pose_tracker.py is available in the deployment. Tried: ${possiblePaths.join(', ')}`,
+      message: `Python pose tracker script not found at ${SCRIPT_PATH}. Tried paths: ${triedPaths.join(', ')}. Current directory: ${process.cwd()}`,
     });
   }
 
-  // Determine working directory - use backend root for deployment
-  const cwd = fs.existsSync(path.join(__dirname, '../../ai_engine'))
-    ? path.join(__dirname, '../..') // backend root
-    : path.join(__dirname, '../../../'); // repo root for local dev
+  // Determine working directory - use process.cwd() (should be /app on Render or backend/ locally)
+  // The script path is already absolute, so we use process.cwd() as the working directory
+  const cwd = process.cwd();
 
   const child = spawn(PYTHON_EXECUTABLE, [SCRIPT_PATH, exercise, cameraSource], {
     cwd,
