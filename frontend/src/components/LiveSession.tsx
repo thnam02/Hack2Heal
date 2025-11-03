@@ -203,14 +203,24 @@ export function LiveSession() {
 
       // Filter out devices with empty deviceId
       const validDevices = videoInputs.filter((device) => device.deviceId && device.deviceId.trim() !== '');
-      setDevices(validDevices);
-      if (validDevices.length) {
-        const firstDevice = validDevices[0];
-        setSelectedDeviceId(firstDevice.deviceId || `device-${firstDevice.index}`);
+      
+      // If we have valid devices, use them; otherwise use all devices (they might not have deviceIds yet until permissions granted)
+      const devicesToUse = validDevices.length > 0 ? validDevices : videoInputs;
+      setDevices(devicesToUse);
+      
+      if (devicesToUse.length) {
+        const firstDevice = devicesToUse[0];
+        // Only set deviceId if it's not empty, otherwise use index-based fallback
+        if (firstDevice.deviceId && firstDevice.deviceId.trim() !== '') {
+          setSelectedDeviceId(firstDevice.deviceId);
+        } else {
+          // Use a placeholder that won't be empty string
+          setSelectedDeviceId(`camera-${firstDevice.index}`);
+        }
         setSelectedCameraIndex(String(firstDevice.index));
       } else {
-        // No valid devices found
-        setSelectedDeviceId('');
+        // No devices found at all
+        setSelectedDeviceId('default');
         setSelectedCameraIndex('0');
       }
     } catch (error) {
@@ -219,20 +229,38 @@ export function LiveSession() {
   };
 
   const startPreview = async () => {
-    if (!selectedDeviceId) {
-      return;
-    }
-
     try {
+      let videoConstraints: MediaTrackConstraints = { 
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      };
+
+      // If we have a selected deviceId and it's not a fallback placeholder, use it
+      // Fallback values start with "camera-" or are "default"
+      if (selectedDeviceId && 
+          selectedDeviceId.trim() !== '' && 
+          !selectedDeviceId.startsWith('camera-') && 
+          selectedDeviceId !== 'default') {
+        videoConstraints.deviceId = { exact: selectedDeviceId };
+      } else if (selectedCameraIndex && selectedCameraIndex !== '0') {
+        // If we have a camera index, try to use it
+        // Note: This won't work directly, but we'll fall back to default camera
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: selectedDeviceId } },
+        video: videoConstraints,
         audio: false,
       });
       setPreviewStream(stream);
       setIsPreviewActive(true);
+      
+      // After getting permission, refresh devices to get proper deviceIds
+      refreshDevices();
       // Preview running
     } catch (error) {
-      // Ignore preview errors
+      console.error('Failed to start camera preview:', error);
+      // Show user-friendly error
+      alert('Unable to access camera. Please check your permissions and try again.');
     }
   };
 
@@ -463,14 +491,19 @@ export function LiveSession() {
   };
 
   const deviceOptions = useMemo(() => {
-    // Filter out devices with empty deviceId and ensure value is never empty string
-    return devices
-      .filter((device) => device.deviceId && device.deviceId.trim() !== '')
-      .map((device) => ({
-        value: device.deviceId || `device-${device.index}`, // Fallback if somehow empty
+    // Map devices, ensuring value is never empty string
+    return devices.map((device) => {
+      // Use deviceId if available, otherwise use index-based value
+      const value = device.deviceId && device.deviceId.trim() !== '' 
+        ? device.deviceId 
+        : `camera-${device.index}`;
+      
+      return {
+        value,
         label: `${device.label} (cv2 index ${device.index})`,
         indexValue: String(device.index),
-      }));
+      };
+    });
   }, [devices]);
 
   // Calculate progress percentage (based on sets only)
@@ -631,7 +664,7 @@ export function LiveSession() {
                   <SelectContent>
                     {deviceOptions.length > 0 ? (
                       deviceOptions.map((device) => (
-                        <SelectItem key={device.value} value={device.value || `device-${device.indexValue}`}>
+                        <SelectItem key={device.value} value={device.value}>
                           {device.label}
                         </SelectItem>
                       ))
