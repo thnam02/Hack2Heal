@@ -326,7 +326,16 @@ export default function ActuarialInsights({
                 <label className="text-sm">
                   Adherence Improvement
                 </label>
-                <Badge variant="outline">
+                <Badge 
+                  variant="outline"
+                  className={
+                    adherenceChange[0] > 0 
+                      ? "border-green-500 text-green-600 bg-green-50" 
+                      : adherenceChange[0] < 0 
+                        ? "border-red-500 text-red-600 bg-red-50" 
+                        : "border-gray-300 text-gray-600"
+                  }
+                >
                   {adherenceChange[0] > 0 ? "+" : ""}
                   {adherenceChange[0]}%
                 </Badge>
@@ -345,29 +354,57 @@ export default function ActuarialInsights({
               <h4 className="mb-3">Predicted Impact</h4>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-[#1B1E3D]/60 mb-1">
+                  <p className="text-sm text-[#1B1E3D]/60 mb-2">
                     Drop-off Risk Change
                   </p>
-                  <p
-                    className={`text-2xl ${dropoffReduction > 0 ? "text-[#3ECF8E]" : dropoffReduction < 0 ? "text-[#F87171]" : "text-[#1B1E3D]"}`}
-                  >
-                    {dropoffReduction > 0
-                      ? "↓"
-                      : dropoffReduction < 0
-                        ? "↑"
-                        : "→"}{" "}
-                    {Math.abs(dropoffReduction)}%
-                  </p>
+                  <div className={`inline-block px-4 py-3 rounded-lg ${
+                    dropoffReduction > 0 
+                      ? "bg-green-50 border border-green-200" 
+                      : dropoffReduction < 0 
+                        ? "bg-red-50 border border-red-200" 
+                        : "bg-gray-50 border border-gray-200"
+                  }`}>
+                    <p
+                      className={`text-2xl font-semibold ${
+                        dropoffReduction > 0 
+                          ? "text-[#3ECF8E]" 
+                          : dropoffReduction < 0 
+                            ? "text-[#F87171]" 
+                            : "text-[#1B1E3D]"
+                      }`}
+                    >
+                      {dropoffReduction > 0
+                        ? "↓"
+                        : dropoffReduction < 0
+                          ? "↑"
+                          : "→"}{" "}
+                      {Math.abs(dropoffReduction)}%
+                    </p>
+                  </div>
                 </div>
                 <div>
-                  <p className="text-sm text-[#1B1E3D]/60 mb-1">
+                  <p className="text-sm text-[#1B1E3D]/60 mb-2">
                     Expected Recovery Time
                   </p>
-                  <p
-                    className={`text-2xl ${adherenceChange[0] > 0 ? "text-[#3ECF8E]" : adherenceChange[0] < 0 ? "text-[#F87171]" : "text-[#1B1E3D]"}`}
-                  >
-                    {7.4 - adherenceChange[0] * 0.15} weeks
-                  </p>
+                  <div className={`inline-block px-4 py-3 rounded-lg ${
+                    adherenceChange[0] > 0 
+                      ? "bg-green-50 border border-green-200" 
+                      : adherenceChange[0] < 0 
+                        ? "bg-red-50 border border-red-200" 
+                        : "bg-gray-50 border border-gray-200"
+                  }`}>
+                    <p
+                      className={`text-2xl font-semibold ${
+                        adherenceChange[0] > 0 
+                          ? "text-[#3ECF8E]" 
+                          : adherenceChange[0] < 0 
+                            ? "text-[#F87171]" 
+                            : "text-[#1B1E3D]"
+                      }`}
+                    >
+                      {(7.4 - adherenceChange[0] * 0.15).toFixed(1)} weeks
+                    </p>
+                  </div>
                 </div>
               </div>
               <p className="text-sm text-[#1B1E3D]/70 mt-4 italic">

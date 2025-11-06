@@ -81,9 +81,11 @@ export function LiveSession() {
   const statusHandlerRef = useRef<((payload: StatusEvent) => void) | null>(null);
   const metricsHandlerRef = useRef<((payload: Record<string, unknown>) => void) | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const poseRef = useRef<Pose | null>(null);
   const cameraRef = useRef<Camera | null>(null);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
+  const [showLandmarks, setShowLandmarks] = useState(true);
   
   // Pose analysis state
   const prevAnglesRef = useRef<number[]>([]);
@@ -506,6 +508,92 @@ export function LiveSession() {
     return result;
   }, [calculateAngle]);
 
+  // Draw pose landmarks and skeleton on canvas
+  const drawPoseLandmarks = useCallback((results: Results) => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    
+    if (!canvas || !video || !video.videoWidth || !video.videoHeight) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Set canvas size to match video
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // If landmarks are disabled, just return
+    if (!showLandmarks) {
+      return;
+    }
+    
+    if (!results.poseLandmarks || results.poseLandmarks.length === 0) {
+      return;
+    }
+    
+    const landmarks = results.poseLandmarks;
+    
+    // Draw connections (skeleton) - màu cyan
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#00ffff';
+    
+    // MediaPipe Pose connections (33 keypoints)
+    const connections = [
+      // Face
+      [0, 2], [2, 4], [0, 4], // nose to eyes
+      // Torso
+      [11, 12], // shoulders
+      [11, 23], [12, 24], // shoulders to hips
+      [23, 24], // hips
+      // Left arm
+      [11, 13], [13, 15], // shoulder to elbow to wrist
+      // Right arm
+      [12, 14], [14, 16], // shoulder to elbow to wrist
+      // Left leg
+      [23, 25], [25, 27], [27, 29], [29, 31], // hip to knee to ankle to foot
+      // Right leg
+      [24, 26], [26, 28], [28, 30], [30, 32], // hip to knee to ankle to foot
+    ];
+    
+    // Draw connections
+    connections.forEach(([start, end]) => {
+      const startPoint = landmarks[start];
+      const endPoint = landmarks[end];
+      
+      if (startPoint && endPoint && 
+          (startPoint.visibility ?? 1) > 0.5 && 
+          (endPoint.visibility ?? 1) > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(startPoint.x * canvas.width, startPoint.y * canvas.height);
+        ctx.lineTo(endPoint.x * canvas.width, endPoint.y * canvas.height);
+        ctx.stroke();
+      }
+    });
+    
+    // Draw landmarks (joints) - màu vàng
+    ctx.fillStyle = '#ffff00';
+    ctx.shadowBlur = 5;
+    ctx.shadowColor = '#ffff00';
+    
+    landmarks.forEach((landmark) => {
+      if (landmark && (landmark.visibility ?? 1) > 0.5) {
+        const x = landmark.x * canvas.width;
+        const y = landmark.y * canvas.height;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    });
+  }, [showLandmarks]);
+
   const handleMetricsPayload = useCallback((payload: Record<string, unknown> | null) => {
     // Only update if we have valid payload data
     if (!payload) {
@@ -706,6 +794,10 @@ export function LiveSession() {
 
       // Set up pose results handler
       pose.onResults((results) => {
+        // Draw landmarks and skeleton on canvas
+        drawPoseLandmarks(results);
+        
+        // Analyze pose and update metrics
         const metricsData = analyzePose(results, exerciseOption);
         // Only update metrics if we have valid data
         if (metricsData !== null) {
@@ -770,6 +862,15 @@ export function LiveSession() {
     if (poseRef.current) {
       poseRef.current.close();
       poseRef.current = null;
+    }
+
+    // Clear canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
     }
 
     // Reset pose analysis state
@@ -1046,6 +1147,13 @@ export function LiveSession() {
                       <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                     )}
                     
+                    {/* Canvas overlay để vẽ landmarks */}
+                    <canvas 
+                      ref={canvasRef}
+                      className="absolute top-0 left-0 w-full h-full pointer-events-none"
+                      style={{ zIndex: 1 }}
+                    />
+                    
                   {/* Real-time Feedback Bubble */}
                   <div className="absolute top-4 left-4 right-4 bg-white backdrop-blur rounded-xl p-4 shadow-lg z-10">
                     <div className="flex items-start gap-3">
@@ -1120,6 +1228,20 @@ export function LiveSession() {
                   </Button>
                 </div>
               </div>
+
+              {/* Skeleton Toggle */}
+              {isPreviewActive && (
+                <div className="mt-2">
+                  <Button 
+                    onClick={() => setShowLandmarks(!showLandmarks)} 
+                    variant="outline" 
+                    size="sm"
+                    className="w-full"
+                  >
+                    {showLandmarks ? 'Hide Skeleton' : 'Show Skeleton'}
+                  </Button>
+                </div>
+              )}
 
               {isPreviewActive && !sessionComplete && (
                 <div className="flex gap-3 mt-4">

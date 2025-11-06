@@ -24,6 +24,12 @@ export function Settings() {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(true);
+  const [connectedDevices, setConnectedDevices] = useState([
+    { name: 'Apple Health', connected: true, icon: '🍎' },
+    { name: 'Fitbit', connected: false, icon: '⌚' },
+    { name: 'Google Fit', connected: true, icon: '📱' },
+    { name: 'RehabMax', connected: false, icon: '🤖' }
+  ]);
 
   // Parse user name into first and last name
   const { firstName, lastName, userInitial } = useMemo(() => {
@@ -39,11 +45,17 @@ export function Settings() {
     return { firstName, lastName, userInitial };
   }, [user?.name]);
 
-  const connectedDevices = [
-    { name: 'Apple Health', connected: true, icon: '🍎' },
-    { name: 'Fitbit', connected: false, icon: '⌚' },
-    { name: 'Google Fit', connected: true, icon: '📱' }
-  ];
+  // Toggle device connection
+  const toggleDeviceConnection = (index: number) => {
+    setConnectedDevices((prevDevices) => {
+      const updatedDevices = [...prevDevices];
+      updatedDevices[index] = {
+        ...updatedDevices[index],
+        connected: !updatedDevices[index].connected,
+      };
+      return updatedDevices;
+    });
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -289,7 +301,7 @@ export function Settings() {
                       id={`device-${index}`}
                       name={`device-${index}`}
                       checked={device.connected}
-                      onCheckedChange={() => {}}
+                      onCheckedChange={() => toggleDeviceConnection(index)}
                       aria-label={`${device.name} connection`}
                     />
                   </div>
